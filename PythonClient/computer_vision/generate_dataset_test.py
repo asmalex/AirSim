@@ -67,6 +67,7 @@ roll = 0
 yaw = random.randint(0, FOV * PRECISION_ANGLE) / PRECISION_ANGLE - FOV/2
 
 # Calculate coordinates of the center of the obstacle relative to the drone's new position and orientation
+# To use global coordinates, use the recorded global position of the camera where the obstacle is at [0,0,0]
 obs_r = r
 obs_phi = yaw
 obs_theta = 90 - pitch
@@ -92,3 +93,5 @@ print("Pose of the obstacle")
 pp.pprint(obs_pos)
 print("Rotation on the obstacle")
 pp.pprint([obs_phi_offset, obs_theta_offset])
+
+client.simPlotArrows([airsim.Vector3r(pos[0], pos[1], pos[2])], [airsim.Vector3r(0, 0, 0)], is_persistent=True)
