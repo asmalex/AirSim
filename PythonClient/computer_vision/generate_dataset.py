@@ -69,14 +69,15 @@ while 1:
 
     # Calculate coordinates of the center of the obstacle relative to the drone's new position and orientation
     obs_r = r
-    obs_phi = -yaw
-    obs_theta = 90 + pitch
+    obs_phi = yaw
+    obs_theta = 90 - pitch
     # Convert polar coordinates to cartesian for AirSim
     obs_pos = polarToCartesian(obs_r, math.radians(obs_theta), math.radians(obs_phi))
 
-    # Record rotational transformation on obstacle for calculating coordinates of key locations relative to the center
+    # Record rotational transformation on obstacle for calculating coordinates of key locations relative to the center.
+    # These can be used to recover any point on the object by translating the object to the origin, applying rotation matrices, then translating back to its position
     obs_phi_offset = -phi
-    obs_theta_offset = 270 - theta
+    obs_theta_offset = -theta
 
     # Move the camera to our calculated position
     camera_pose = airsim.Pose(airsim.Vector3r(pos[0], pos[1], pos[2]), airsim.to_quaternion(math.radians(90 - theta + pitch), math.radians(roll), math.radians(phi + 180 + yaw))) #radians
