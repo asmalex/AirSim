@@ -20,7 +20,15 @@ protected:
 	virtual void BeginPlay() override;
 
 public:	
+	int goals;
+
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
+	// Blueprint exposed function methods taken from https://www.orfeasel.com/exposing-cfunction-tobps/
+    UFUNCTION(BlueprintCallable, Category = "MyOwnCategory")
+    void SendMessageSocket();
+
+	UFUNCTION(BlueprintCallable, Category = "MyOwnCategory")
+    void ClosePort();
 };

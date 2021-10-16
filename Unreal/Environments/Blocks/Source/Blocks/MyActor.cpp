@@ -2,8 +2,9 @@
 
 
 #include "MyActor.h"
-#include "A:\EpicGames\UE_4.27\Engine\Source\Runtime\Online\WebSockets\Public\WebSocketsModule.h"
-#include "A:\EpicGames\UE_4.27\Engine\Source\Runtime\Online\WebSockets\Public\IWebSocket.h"
+#include "Modules/ModuleManager.h"
+#include "C:\Program Files\Epic Games\UE_4.26\Engine\Source\Runtime\Online\WebSockets\Public\WebSocketsModule.h" // Module definition
+#include "C:\Program Files\Epic Games\UE_4.26\Engine\Source\Runtime\Online\WebSockets\Public\IWebSocket.h"       // Socket definition
 
 TSharedPtr<IWebSocket> Socket;
 
@@ -18,11 +19,12 @@ AMyActor::AMyActor()
 // Called when the game starts or when spawned
 void AMyActor::BeginPlay()
 {
-
-	const FString ServerURL = TEXT("ws://127.0.0.1:30020/obstacle"); // Your server URL. You can use ws, wss or wss+insecure.
+    const FString ServerURL = TEXT("ws://127.0.0.1:30020/obstacle"); // Your server URL. You can use ws, wss or wss+insecure.
     const FString ServerProtocol = TEXT("ws"); // The WebServer protocol you want to use.
 
-    Socket = FWebSocketsModule::Get().CreateWebSocket(ServerURL,  ServerProtocol);
+    AMyActor::goals = 0; // Number of obstacles that have been passed through in binary
+
+    Socket = FWebSocketsModule::Get().CreateWebSocket(ServerURL, ServerProtocol);
 
     // We bind all available events
     Socket->OnConnected().AddLambda([]() -> void {
@@ -69,13 +71,8 @@ void AMyActor::BeginPlay()
     });
 
     // And we finally connect to the server.
-    GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Blue, TEXT("Print before connection"));
     Socket->Connect();
-    GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Blue, TEXT("Print after connection"));
 
-
-    Super::BeginPlay();
-	
 }
 
 // Called every frame
@@ -85,3 +82,25 @@ void AMyActor::Tick(float DeltaTime)
 
 }
 
+// Increments the number of obstacles passed through and sends the value through the WebSocket
+void AMyActor::SendMessageSocket()
+{
+    if (!Socket->IsConnected()) {
+        // Don't send if we're not connected.
+        return;
+    }
+
+    AMyActor::goals = AMyActor::goals++;
+    int temp = AMyActor::goals;
+
+    Socket->Send(&temp, sizeof(char));
+}
+
+void AMyActor::ClosePort()
+{
+    Socket->Close();
+}
+
+// STORAGE
+
+//  GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red, TEXT("Object Websocket connection error! Severence from server was unclean"));
