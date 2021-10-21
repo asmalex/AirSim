@@ -14,6 +14,8 @@ from websocket import create_connection
 
 
 class AirSimDroneEnvironment(AirSimEnv):
+    #ws = create_connection("ws://127.0.0.1:30020/obstacle")
+
     def __init__(self, ip_address, step_length, image_shape):
         super().__init__(image_shape)
         self.step_length = step_length
@@ -42,9 +44,6 @@ class AirSimDroneEnvironment(AirSimEnv):
         #, airsim.ImageRequest(
         #    "4", airsim.ImageType.DepthPerspective, True, False)
         ]
-
-
-        self.ws = create_connection("ws://127.0.0.1:30020/obstacle")
         
         # self.ssh = paramiko.SSHClient()
         # TODO: Link commands to DroneShell
@@ -54,23 +53,33 @@ class AirSimDroneEnvironment(AirSimEnv):
         self.drone.reset()
 
     def _setup_flight(self):
-        # self.drone.reset()
+        self.drone.reset()
+        self.send_to_drone("RequestControl")
+        self.send_to_drone("Arm")
+        self.send_to_drone("Takeoff")
         self.drone.enableApiControl(True)
         self.drone.armDisarm(True)
 
         # Set home position and velocity (normalized vector in the direction of the first obstacle)
         # TODO: PX4 failing on first command. Change to Shell command
-        self.drone.moveToPositionAsync(300.0, -120.0, 2000.0, 60).join()
+        self.send_to_drone("MoveToPosition -x 3.0 -y -1.2 -z 20")
+        #self.drone.moveToPositionAsync(300.0, -120.0, 2000.0, 60).join()
         #TODO: Orient the drone so it can see the first obstacle
 
-        print ("Receiving...")
-        received =  self.ws.recv() # Assumes input is a single string representing the csv containing required data
-        print ("Received '%s'" % reward_goal)
-        received =  received.split(',')
-        received = [float(received[i]) for i in range(len(received))]
+        received = self.drone.simGetObjectPose("Obstacle1")
+        obs_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the obstacle
+
+        received = self.drone.simGetVehiclePose()
+        drone_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the drone
+
+        #print ("Receiving...")
+        #received =  self.ws.recv() # Assumes input is a single string representing the csv containing required data
+        #print ("Received '%s'" % reward_goal)
+        #received =  received.split(',')
+        #received = [float(received[i]) for i in range(len(received))]
             
-        obs_pos = np.array([received[0],received[1],received[2]]) # Global coordinates of the obstacle
-        drone_pos = np.array([received[7],received[8],received[9]]) # Global coordinates of the drone
+        #obs_pos = np.array([received[0],received[1],received[2]]) # Global coordinates of the obstacle
+        #drone_pos = np.array([received[7],received[8],received[9]]) # Global coordinates of the drone
 
         self.last_unit_LOS = AirSimDroneEnvironment.normalize(drone_pos - obs_pos) # unit vector from the drone to the obstacle
 
@@ -103,22 +112,29 @@ class AirSimDroneEnvironment(AirSimEnv):
 
     def _do_action(self, action):
         command = self.interpret_action(action)
-        send_to_drone(command)
+        self.send_to_drone(command)
 
     #TODO: Send signal through websocket to punish the algorithm if no obstacle can be seen
     def _compute_reward(self):
         if self.state["collision"]:
             reward = -100
         else:
-            print ("Receiving...")
-            received =  self.ws.recv() # Assumes input is a single string representing the csv containing required data
-            print ("Received '%s'" % reward_goal)
-            received =  received.split(',')
-            received = [float(received[i]) for i in range(len(received))]
+            received = self.drone.simGetObjectPose("Obstacle1")
+            obs_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the obstacle
+            obs_or = [received.orientation.w_val, received.orientation.x_val, received.orientation.y_val, received.orientation.z_val] # Quaternion rotation put on the obstacle
+
+            received = self.drone.simGetVehiclePose()
+            drone_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the drone
+
+            #print ("Receiving...")
+            #received =  self.ws.recv() # Assumes input is a single string representing the csv containing required data
+            #print ("Received '%s'" % reward_goal)
+            #received =  received.split(',')
+            #received = [float(received[i]) for i in range(len(received))]
             
-            obs_pos = np.array([received[0],received[1],received[2]]) # Global coordinates of the obstacle
-            obs_or = [received[3],received[4],received[5],received[6]] # Quaternion rotation put on the obstacle
-            drone_pos = np.array([received[7],received[8],received[9]]) # Global coordinates of the drone
+            #obs_pos = np.array([received[0],received[1],received[2]]) # Global coordinates of the obstacle
+            #obs_or = [received[3],received[4],received[5],received[6]] # Quaternion rotation put on the obstacle
+            #drone_pos = np.array([received[7],received[8],received[9]]) # Global coordinates of the drone
 
             LOS = drone_pos - obs_pos # Vector from the drone to the obstacle
             unit_LOS = AirSimDroneEnvironment.normalize(LOS) # unit vector from the drone to the obstacle
@@ -182,8 +198,8 @@ class AirSimDroneEnvironment(AirSimEnv):
         # ssh_stdin, ssh_stdout, ssh_stderr = self.ssh.exec_command(command)
 
     # Closes the Websocket ClientSide
-    def close_socket(self):
-        self.ws.close()
+    #def close_socket(self):
+        #self.ws.close()
 
     def normalize(v):
         norm = np.linalg.norm(v)
