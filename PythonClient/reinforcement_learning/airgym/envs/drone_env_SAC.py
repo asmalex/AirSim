@@ -9,7 +9,7 @@ import gym
 from gym import spaces
 from airgym.envs.airsim_env import AirSimEnv
 
-from websocket import create_connection
+#from websocket import create_connection
 #import paramiko
 
 
@@ -30,11 +30,11 @@ class AirSimDroneEnvironment(AirSimEnv):
         self.drone = airsim.MultirotorClient(ip=ip_address)
 
         # MoveByManual -vx * -vy * -z * -duration 5 -yaw_rate *
-        self.action_space = spaces.Box(np.array([-10.0, -10.0, 5.0, -10.0], dtype=np.float32), np.array([10.0, 10.0, 30.0, -10.0], dtype=np.float32))
+        self.action_space = spaces.Box(np.array([-10.0, -10.0, 5.0, -10.0], dtype=np.float32), np.array([10.0, 10.0, 30.0, 10.0], dtype=np.float32))
         self._setup_flight()
 
         self.image_request = [airsim.ImageRequest(
-            "0", airsim.ImageType.Scene, True, False)
+            "0", airsim.ImageType.DepthPerspective, True, False)
         #, airsim.ImageRequest(
         #   "1", airsim.ImageType.DepthPerspective, True, False)
         #, airsim.ImageRequest(
@@ -63,7 +63,7 @@ class AirSimDroneEnvironment(AirSimEnv):
         # Set home position and velocity (normalized vector in the direction of the first obstacle)
         # TODO: PX4 failing on first command. Change to Shell command
         self.send_to_drone("MoveToPosition -x 3.0 -y -1.2 -z 20")
-        #self.drone.moveToPositionAsync(300.0, -120.0, 2000.0, 60).join()
+        self.drone.moveToPositionAsync(3.0, -1.2, 20.0, 60).join()
         #TODO: Orient the drone so it can see the first obstacle
 
         received = self.drone.simGetObjectPose("Obstacle1")
@@ -86,7 +86,7 @@ class AirSimDroneEnvironment(AirSimEnv):
     def transform_obs(self, responses):
         img1d = np.array(responses[0].image_data_float , dtype=np.float)
         img1d = 255 / np.maximum(np.ones(img1d.shape), img1d)
-        img2d = np.reshape(img1d, (responses[0].height, responses[0].width, 3))
+        img2d = np.reshape(img1d, (responses[0].height, responses[0].width))
 
         from PIL import Image
 
@@ -97,6 +97,7 @@ class AirSimDroneEnvironment(AirSimEnv):
         return im_final.reshape([84, 84, 1])
 
     def _get_obs(self):
+        # TODO: Image rendering triggering breakpoint for RGB images
         responses = self.drone.simGetImages(self.image_request)
         image = self.transform_obs(responses)
         self.drone_state = self.drone.getMultirotorState()
@@ -113,6 +114,8 @@ class AirSimDroneEnvironment(AirSimEnv):
     def _do_action(self, action):
         command = self.interpret_action(action)
         self.send_to_drone(command)
+        z = self.state["position"].z_val
+        self.drone.moveByManualAsync(float(action[0]), float(action[1]), float(np.clip(action[2], z-2.5, z+2.5)), duration = 5.0, yaw_mode = airsim.YawMode(True, float(action[3])))
 
     #TODO: Send signal through websocket to punish the algorithm if no obstacle can be seen
     def _compute_reward(self):
@@ -178,7 +181,7 @@ class AirSimDroneEnvironment(AirSimEnv):
         return self._get_obs()
 
     def interpret_action(self, action):
-        z = self.state["position"][2]
+        z = self.state["position"].z_val
 
         # MoveByManual -vx * -vy * -* * -duration 0.25 -yaw_rate *
         command = "MoveByManual -vx "
