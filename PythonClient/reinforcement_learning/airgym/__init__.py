@@ -10,5 +10,9 @@ register(
 )
 
 register(
+    id="airsim-drone-sample-v2", entry_point="airgym.envs:AirSimDroneEnvironmentTwo",
+)
+
+register(
     id="airsim-car-sample-v0", entry_point="airgym.envs:AirSimCarEnv",
 )
