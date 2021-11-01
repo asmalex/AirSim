@@ -53,7 +53,7 @@ class AirSimDroneEnvironment(AirSimEnv):
         self.drone.reset()
 
     def _setup_flight(self):
-        self.drone.reset()
+        #self.drone.reset()
         self.send_to_drone("RequestControl")
         self.send_to_drone("Arm")
         self.send_to_drone("Takeoff")
@@ -62,8 +62,8 @@ class AirSimDroneEnvironment(AirSimEnv):
 
         # Set home position and velocity (normalized vector in the direction of the first obstacle)
         # TODO: PX4 failing on first command. Change to Shell command
-        self.send_to_drone("MoveToPosition -x 3.0 -y -1.2 -z 20")
-        self.drone.moveToPositionAsync(3.0, -1.2, 20.0, 60).join()
+        self.send_to_drone("MoveToPosition -x 3.0 -y -1.2 -z -20.0")
+        self.drone.moveToPositionAsync(3.0, -1.2, -20.0, 5).join()
         #TODO: Orient the drone so it can see the first obstacle
 
         received = self.drone.simGetObjectPose("Obstacle1")
@@ -114,8 +114,7 @@ class AirSimDroneEnvironment(AirSimEnv):
     def _do_action(self, action):
         command = self.interpret_action(action)
         self.send_to_drone(command)
-        z = self.state["position"].z_val
-        self.drone.moveByManualAsync(float(action[0]), float(action[1]), float(np.clip(action[2], z-2.5, z+2.5)), duration = 5.0, yaw_mode = airsim.YawMode(True, float(action[3])))
+        self.drone.moveByAngleRatesThrottleAsync(float(action[0]), float(action[1]), float(action[2]), float(action[3]), 0.25).join()
 
     #TODO: Send signal through websocket to punish the algorithm if no obstacle can be seen
     def _compute_reward(self):
@@ -163,6 +162,9 @@ class AirSimDroneEnvironment(AirSimEnv):
                 )
             reward = reward_speed + reward_dir - punish_dir
 
+        # Temporary negative reward for debugging
+        reward = -100
+
         done = 0
         if reward <= -10:
             done = 1
@@ -181,17 +183,16 @@ class AirSimDroneEnvironment(AirSimEnv):
         return self._get_obs()
 
     def interpret_action(self, action):
-        z = self.state["position"].z_val
-
-        # MoveByManual -vx * -vy * -* * -duration 0.25 -yaw_rate *
-        command = "MoveByManual -vx "
+        # moveByAngleRatesThrottleAsync -roll_rate * -pitch_rate * -yaw_rate * -throttle * -duration 5
+        command = "moveByAngleRatesThrottleAsync -roll_rate "
         command += str(action[0])
-        command += " -vy "
+        command += " -pitch_rate "
         command += str(action[1])
-        command += " -z "
-        command += str(np.clip(action[2], z-2.5, z+2.5))
-        command += " -duration 5 -yaw_rate "
+        command += " -yaw_rate "
+        command += str(action[2])
+        command += " -throttle "
         command += str(action[3])
+        command += " -duration 5"
 
         return command
 
