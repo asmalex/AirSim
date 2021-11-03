@@ -30,7 +30,7 @@ class AirSimDroneEnvironment(AirSimEnv):
         self.drone = airsim.MultirotorClient(ip=ip_address)
 
         # MoveByManual -vx * -vy * -z * -duration 5 -yaw_rate *
-        self.action_space = spaces.Box(np.array([-10.0, -10.0, 5.0, -10.0], dtype=np.float32), np.array([10.0, 10.0, 30.0, 10.0], dtype=np.float32))
+        self.action_space = spaces.Box(np.array([-50.0, -50.0, -50.0, 0.0], dtype=np.float32), np.array([50.0, 50.0, 50.0, 50.0], dtype=np.float32))  
         self._setup_flight()
 
         self.image_request = [airsim.ImageRequest(
@@ -61,9 +61,8 @@ class AirSimDroneEnvironment(AirSimEnv):
         self.drone.armDisarm(True)
 
         # Set home position and velocity (normalized vector in the direction of the first obstacle)
-        # TODO: PX4 failing on first command. Change to Shell command
-        self.send_to_drone("MoveToPosition -x 3.0 -y -1.2 -z -20.0")
-        self.drone.moveToPositionAsync(3.0, -1.2, -20.0, 5).join()
+        self.send_to_drone("MoveToPosition -x 35.64 -y 20.49 -z -25.8")
+        self.drone.moveToPositionAsync(35.64, 20.49, -25.8, 5).join()
         #TODO: Orient the drone so it can see the first obstacle
 
         received = self.drone.simGetObjectPose("Obstacle1")
@@ -71,15 +70,6 @@ class AirSimDroneEnvironment(AirSimEnv):
 
         received = self.drone.simGetVehiclePose()
         drone_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the drone
-
-        #print ("Receiving...")
-        #received =  self.ws.recv() # Assumes input is a single string representing the csv containing required data
-        #print ("Received '%s'" % reward_goal)
-        #received =  received.split(',')
-        #received = [float(received[i]) for i in range(len(received))]
-            
-        #obs_pos = np.array([received[0],received[1],received[2]]) # Global coordinates of the obstacle
-        #drone_pos = np.array([received[7],received[8],received[9]]) # Global coordinates of the drone
 
         self.last_unit_LOS = AirSimDroneEnvironment.normalize(drone_pos - obs_pos) # unit vector from the drone to the obstacle
 
@@ -124,31 +114,31 @@ class AirSimDroneEnvironment(AirSimEnv):
             received = self.drone.simGetObjectPose("Obstacle1")
             obs_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the obstacle
             obs_or = [received.orientation.w_val, received.orientation.x_val, received.orientation.y_val, received.orientation.z_val] # Quaternion rotation put on the obstacle
+            # v' = v + 2 * r x (s * v + r x v) / m
+            obs_face = np.array([1,0,0]) + np.cross(2 * np.array(obs_or[1:]), obs_or[0]*np.array([1,0,0]) + np.cross(np.array(obs_or[1:]), np.array([1,0,0]))) / (obs_or[0]**2 + obs_or[1]**2 + obs_or[2]**2 + obs_or[3]**2)
 
             received = self.drone.simGetVehiclePose()
             drone_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the drone
+            drone_or = [received.orientation.w_val, received.orientation.x_val, received.orientation.y_val, received.orientation.z_val] # Quaternion rotation put on the drone
+            # v' = v + 2 * r x (s * v + r x v) / m
+            drone_face = np.array([1,0,0]) + np.cross(2 * np.array(drone_or[1:]), drone_or[0]*np.array([1,0,0]) + np.cross(np.array(drone_or[1:]), np.array([1,0,0]))) / (drone_or[0]**2 + drone_or[1]**2 + drone_or[2]**2 + drone_or[3]**2)
 
-            #print ("Receiving...")
-            #received =  self.ws.recv() # Assumes input is a single string representing the csv containing required data
-            #print ("Received '%s'" % reward_goal)
-            #received =  received.split(',')
-            #received = [float(received[i]) for i in range(len(received))]
-            
-            #obs_pos = np.array([received[0],received[1],received[2]]) # Global coordinates of the obstacle
-            #obs_or = [received[3],received[4],received[5],received[6]] # Quaternion rotation put on the obstacle
-            #drone_pos = np.array([received[7],received[8],received[9]]) # Global coordinates of the drone
-
-            LOS = drone_pos - obs_pos # Vector from the drone to the obstacle
+            LOS = obs_pos - drone_pos # Vector from the drone to the obstacle
             unit_LOS = AirSimDroneEnvironment.normalize(LOS) # unit vector from the drone to the obstacle
             LOS_change = math.sqrt((self.last_unit_LOS[0] - unit_LOS[0])**2 + (self.last_unit_LOS[1] - unit_LOS[1])**2 + (self.last_unit_LOS[2] - unit_LOS[2])**2) # Change in LOS since the last step
             self.last_unit_LOS = unit_LOS
-
-            obs_face = [2 * (obs_or[1]*obs_or[3] + obs_or[0]*obs_or[2]) , 2 * (obs_or[2]*obs_or[3] - obs_or[0]*obs_or[1]) , 1 - 2 * (obs_or[1]**2 + obs_or[2]**2)] # Image of [1,0,0] under the quaternion rotation obs_or
             offset = math.sqrt((obs_face[0] - unit_LOS[0])**2 + (obs_face[1] - unit_LOS[1])**2 + (obs_face[2] - unit_LOS[2])**2) # difference between current heading and the heading corresponding to going straight through the obstacle
             
-            reward_dir = (2 - offset) * 0.5
-
-            punish_dir = LOS_change
+            # Camera details should match settings.json
+            IMAGE_HEIGHT = 144
+            IMAGE_WIDTH = 256
+            FOV = 90 * math.pi / 180
+            VERT_FOV = FOV * IMAGE_HEIGHT / IMAGE_WIDTH
+            centered_obs = AirSimDroneEnvironment.cartesianToPolar(LOS[0], LOS[1], LOS[2]) # Position of the obstacle while allowing the drone's position to be the origin, in polar coordinates
+            drone_heading = AirSimDroneEnvironment.cartesianToPolar(drone_face[0], drone_face[1], drone_face[2]) # Angular heading of the drone in polar coordinates
+            
+            reward_dir = (2 - offset) * 0.5 # reward the similarity between the drone's forward heading and the obstacle's
+            punish_dir = LOS_change # punish the change in the LOS vector
 
             reward_speed = (
                 np.linalg.norm(
@@ -160,10 +150,12 @@ class AirSimDroneEnvironment(AirSimEnv):
                 )
                 - 0.5
                 )
-            reward = reward_speed + reward_dir - punish_dir
 
-        # Temporary negative reward for debugging
-        reward = -100
+            # Punish the drone if the obstacle is not within the camera's FOV
+            if (np.abs(drone_heading[1] - centered_obs[1]) > FOV/2 or np.abs(drone_heading[2] - centered_obs[2]) > VERT_FOV/2):
+                reward = -100
+            else:
+                reward = reward_speed + reward_dir - punish_dir
 
         done = 0
         if reward <= -10:
@@ -175,6 +167,9 @@ class AirSimDroneEnvironment(AirSimEnv):
         self._do_action(action)
         obs = self._get_obs()
         reward, done = self._compute_reward()
+
+        #Temporarily report reward for testing
+        print(reward)
 
         return obs, reward, done, self.state
 
@@ -198,7 +193,8 @@ class AirSimDroneEnvironment(AirSimEnv):
 
     # Sends a command string to DroneShell
     def send_to_drone(self, command):
-        print(command)
+        return # Temporarily disable websocket sending
+        #print(command)
         # ssh_stdin, ssh_stdout, ssh_stderr = self.ssh.exec_command(command)
 
     # Closes the Websocket ClientSide
@@ -210,3 +206,15 @@ class AirSimDroneEnvironment(AirSimEnv):
         if norm == 0: 
             return v
         return v / norm
+
+    def polarToCartesian(r, theta, phi):
+        return [
+             r * math.sin(theta) * math.cos(phi),
+             r * math.sin(theta) * math.sin(phi),
+             r * math.cos(theta)]
+
+    def cartesianToPolar(x,y,z):
+        return [
+            np.sqrt(x**2 + y**2 + z**2),
+            np.arctan2(y, x),
+            np.arctan2(np.sqrt(x**2 + y**2), z)]
