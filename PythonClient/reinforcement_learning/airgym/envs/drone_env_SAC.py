@@ -9,13 +9,8 @@ import gym
 from gym import spaces
 from airgym.envs.airsim_env import AirSimEnv
 
-#from websocket import create_connection
-#import paramiko
-
 
 class AirSimDroneEnvironment(AirSimEnv):
-    #ws = create_connection("ws://127.0.0.1:30020/obstacle")
-
     def __init__(self, ip_address, step_length, image_shape):
         super().__init__(image_shape)
         self.step_length = step_length
@@ -29,8 +24,8 @@ class AirSimDroneEnvironment(AirSimEnv):
 
         self.drone = airsim.MultirotorClient(ip=ip_address)
 
-        # MoveByManual -vx * -vy * -z * -duration 5 -yaw_rate *
-        self.action_space = spaces.Box(np.array([-50.0, -50.0, -50.0, 0.0], dtype=np.float32), np.array([50.0, 50.0, 50.0, 50.0], dtype=np.float32))  
+        # moveByRollPitchYawThrottleAsync -roll -pitch -yaw -throttle
+        self.action_space = spaces.Box(np.array([-90, -90, -90, 0.0], dtype=np.float32), np.array([90, 90, 90, 1.0], dtype=np.float32))  
         self._setup_flight()
 
         self.image_request = [airsim.ImageRequest(
@@ -44,34 +39,33 @@ class AirSimDroneEnvironment(AirSimEnv):
         #, airsim.ImageRequest(
         #    "4", airsim.ImageType.DepthPerspective, True, False)
         ]
-        
-        # self.ssh = paramiko.SSHClient()
-        # TODO: Link commands to DroneShell
-        # self.ssh.connect(server, username=username, password=password)
 
     def __del__(self):
         self.drone.reset()
 
     def _setup_flight(self):
         #self.drone.reset()
-        self.send_to_drone("RequestControl")
-        self.send_to_drone("Arm")
-        self.send_to_drone("Takeoff")
         self.drone.enableApiControl(True)
         self.drone.armDisarm(True)
 
         # Set home position and velocity (normalized vector in the direction of the first obstacle)
-        self.send_to_drone("MoveToPosition -x 35.64 -y 20.49 -z -25.8")
-        self.drone.moveToPositionAsync(35.64, 20.49, -25.8, 5).join()
-        #TODO: Orient the drone so it can see the first obstacle
+        self.drone.moveToPositionAsync(13.64, 20.49, -15.8, 1).join()
 
         received = self.drone.simGetObjectPose("Obstacle1")
         obs_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the obstacle
 
         received = self.drone.simGetVehiclePose()
         drone_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the drone
+        drone_or = [received.orientation.w_val, received.orientation.x_val, received.orientation.y_val, received.orientation.z_val] # Quaternion rotation put on the drone
+        # v' = v + 2 * r x (s * v + r x v) / m
+        drone_face = np.array([1,0,0]) + np.cross(2 * np.array(drone_or[1:]), drone_or[0]*np.array([1,0,0]) + np.cross(np.array(drone_or[1:]), np.array([1,0,0]))) / (drone_or[0]**2 + drone_or[1]**2 + drone_or[2]**2 + drone_or[3]**2)
+        drone_rot = AirSimDroneEnvironment.cartesianToPolar(drone_face[0], drone_face[1], drone_face[2])
 
         self.last_unit_LOS = AirSimDroneEnvironment.normalize(drone_pos - obs_pos) # unit vector from the drone to the obstacle
+
+        # Orient the drone to face the obstacle
+        centered_obs = AirSimDroneEnvironment.cartesianToPolar(self.last_unit_LOS[0], self.last_unit_LOS[1], self.last_unit_LOS[2]) # Position of the obstacle while allowing the drone's position to be the origin, in polar coordinates
+        self.drone.rotateToYawAsync((centered_obs[2] - drone_rot[2]) * 180/math.pi, timeout_sec=3e+38, margin=5).join() # Rotate Yaw to face the first obstacle
 
     def transform_obs(self, responses):
         img1d = np.array(responses[0].image_data_float , dtype=np.float)
@@ -103,10 +97,10 @@ class AirSimDroneEnvironment(AirSimEnv):
 
     def _do_action(self, action):
         command = self.interpret_action(action)
-        self.send_to_drone(command)
-        self.drone.moveByAngleRatesThrottleAsync(float(action[0]), float(action[1]), float(action[2]), float(action[3]), 0.25).join()
+        print("action: ", float(action[0]), float(action[1]), float(action[2]), float(action[3]))
+        self.drone.moveByRollPitchYawThrottleAsync(float(action[0]), float(action[1]), float(action[2]), float(action[3]), 0.25).join()
 
-    #TODO: Send signal through websocket to punish the algorithm if no obstacle can be seen
+    # TODO: punish_dir is always maximized on the first step
     def _compute_reward(self):
         if self.state["collision"]:
             reward = -100
@@ -137,10 +131,11 @@ class AirSimDroneEnvironment(AirSimEnv):
             centered_obs = AirSimDroneEnvironment.cartesianToPolar(LOS[0], LOS[1], LOS[2]) # Position of the obstacle while allowing the drone's position to be the origin, in polar coordinates
             drone_heading = AirSimDroneEnvironment.cartesianToPolar(drone_face[0], drone_face[1], drone_face[2]) # Angular heading of the drone in polar coordinates
             
-            reward_dir = (2 - offset) * 0.5 # reward the similarity between the drone's forward heading and the obstacle's
-            punish_dir = LOS_change # punish the change in the LOS vector
+            reward_dir = 0.5 * (2 - offset) # reward the similarity between the drone's forward heading and the obstacle's
+            punish_dir = 5 * LOS_change # punish the change in the unit LOS vector
+            reward_dist = 1 / np.linalg.norm(LOS) # reward the closeness of the drone and the obstacle
 
-            reward_speed = (
+            reward_speed = 0.25 * (
                 np.linalg.norm(
                     [
                         self.state["velocity"].x_val,
@@ -155,10 +150,14 @@ class AirSimDroneEnvironment(AirSimEnv):
             if (np.abs(drone_heading[1] - centered_obs[1]) > FOV/2 or np.abs(drone_heading[2] - centered_obs[2]) > VERT_FOV/2):
                 reward = -100
             else:
-                reward = reward_speed + reward_dir - punish_dir
-
+                reward = reward_dir - punish_dir - reward_dist + reward_speed
+            print("reward_dir: ", reward_dir)
+            print("punish_dir: ", punish_dir)
+            print("reward_dist: ", reward_dist)
+            print("reward_speed: ", reward_speed)
+        print("reward: ", reward)
         done = 0
-        if reward <= -10:
+        if reward <= -50:
             done = 1
 
         return reward, done
@@ -167,9 +166,6 @@ class AirSimDroneEnvironment(AirSimEnv):
         self._do_action(action)
         obs = self._get_obs()
         reward, done = self._compute_reward()
-
-        #Temporarily report reward for testing
-        print(reward)
 
         return obs, reward, done, self.state
 
@@ -190,16 +186,6 @@ class AirSimDroneEnvironment(AirSimEnv):
         command += " -duration 5"
 
         return command
-
-    # Sends a command string to DroneShell
-    def send_to_drone(self, command):
-        return # Temporarily disable websocket sending
-        #print(command)
-        # ssh_stdin, ssh_stdout, ssh_stderr = self.ssh.exec_command(command)
-
-    # Closes the Websocket ClientSide
-    #def close_socket(self):
-        #self.ws.close()
 
     def normalize(v):
         norm = np.linalg.norm(v)
