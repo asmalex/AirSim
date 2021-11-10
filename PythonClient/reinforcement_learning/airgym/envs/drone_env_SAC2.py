@@ -11,10 +11,14 @@ from airgym.envs.airsim_env import AirSimEnv
 
 
 class AirSimDroneEnvironmentTwo(gym.Env):
-    def __init__(self, ip_address, step_length):
+    def __init__(self, reward_time_coef, reward_dir_coef, punish_dir_coef, punish_dist_coef, max_drone_angle, ip_address, step_length):
         self.observation_space = spaces.Box(-50, 50, shape=(2,7), dtype=np.float32)
         self.viewer = None
         self.step_length = step_length
+        self.reward_time_coef = reward_time_coef 
+        self.reward_dir_coef = reward_dir_coef 
+        self.punish_dir_coef = punish_dir_coef 
+        self.punish_dist_coef = punish_dist_coef 
 
         self.state = {
             "position": np.zeros(3),
@@ -25,7 +29,7 @@ class AirSimDroneEnvironmentTwo(gym.Env):
         self.drone = airsim.MultirotorClient(ip=ip_address)
 
         # moveByRollPitchYawThrottleAsync -roll -pitch -yaw -throttle
-        self.action_space = spaces.Box(np.array([-90, -90, -90, 0.0], dtype=np.float32), np.array([90, 90, 90, 1.0], dtype=np.float32))   
+        self.action_space = spaces.Box(np.array([-max_drone_angle, -max_drone_angle, -max_drone_angle, 0.0], dtype=np.float32), np.array([max_drone_angle, max_drone_angle, max_drone_angle, 1.0], dtype=np.float32))   
         self._setup_flight()
 
     def __del__(self):
@@ -36,8 +40,11 @@ class AirSimDroneEnvironmentTwo(gym.Env):
         self.drone.enableApiControl(True)
         self.drone.armDisarm(True)
 
-        # Set home position and velocity (normalized vector in the direction of the first obstacle)
-        self.drone.moveToPositionAsync(13.64, 20.49, -15.8, 1).join()
+        received = self.drone.simGetObjectPose("Obstacle1")
+        obs_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the obstacle
+
+        # Move the drone to a starting position nearby the first obstacle
+        self.drone.moveToPositionAsync(obs_pos[0]-10, obs_pos[1]-5, obs_pos[2]-1, 1).join()
 
         received = self.drone.simGetVehiclePose()
         drone_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the drone
@@ -46,7 +53,7 @@ class AirSimDroneEnvironmentTwo(gym.Env):
         drone_face = np.array([1,0,0]) + np.cross(2 * np.array(drone_or[1:]), drone_or[0]*np.array([1,0,0]) + np.cross(np.array(drone_or[1:]), np.array([1,0,0]))) / (drone_or[0]**2 + drone_or[1]**2 + drone_or[2]**2 + drone_or[3]**2)
         drone_rot = AirSimDroneEnvironmentTwo.cartesianToPolar(drone_face[0], drone_face[1], drone_face[2])
 
-        self.last_unit_LOS = AirSimDroneEnvironmentTwo.normalize(drone_pos - obs_pos) # unit vector from the drone to the obstacle
+        self.last_unit_LOS = AirSimDroneEnvironment.normalize(obs_pos - drone_pos) # unit vector from the drone to the obstacle
 
         # Orient the drone to face the obstacle
         centered_obs = AirSimDroneEnvironmentTwo.cartesianToPolar(self.last_unit_LOS[0], self.last_unit_LOS[1], self.last_unit_LOS[2]) # Position of the obstacle while allowing the drone's position to be the origin, in polar coordinates
@@ -67,11 +74,10 @@ class AirSimDroneEnvironmentTwo(gym.Env):
 
         return obs
 
-    # TODO: punish_dir is always maximized on the first step
     def _do_action(self, action):
         command = self.interpret_action(action)
         print("action: ", float(action[0]), float(action[1]), float(action[2]), float(action[3]))
-        self.drone.moveByRollPitchYawThrottleAsync(float(action[0]), float(action[1]), float(action[2]), float(action[3]), 1).join()
+        self.drone.moveByRollPitchYawThrottleAsync(float(action[0]), float(action[1]), float(action[2]), float(action[3]), self.step_length).join()
 
     def _compute_reward(self):
         if self.state["collision"]:
@@ -103,9 +109,9 @@ class AirSimDroneEnvironmentTwo(gym.Env):
             centered_obs = AirSimDroneEnvironmentTwo.cartesianToPolar(LOS[0], LOS[1], LOS[2]) # Position of the obstacle while allowing the drone's position to be the origin, in polar coordinates
             drone_heading = AirSimDroneEnvironmentTwo.cartesianToPolar(drone_face[0], drone_face[1], drone_face[2]) # Angular heading of the drone in polar coordinates
             
-            reward_dir = 0.5 * (2 - offset) # reward the similarity between the drone's forward heading and the obstacle's
-            punish_dir = 5 * LOS_change # punish the change in the unit LOS vector
-            reward_dist = 1 / np.linalg.norm(LOS) # reward the closeness of the drone and the obstacle
+            reward_dir = self.reward_dir_coef * (2 - offset) # reward the similarity between the drone's forward heading and the obstacle's
+            punish_dir = self.punish_dir_coef * LOS_change # punish the change in the unit LOS vector
+            punish_dist = self.punish_dist_coef * np.linalg.norm(LOS) # reward the closeness of the drone and the obstacle
 
             reward_speed = 0.25 * (
                 np.linalg.norm(
@@ -122,15 +128,16 @@ class AirSimDroneEnvironmentTwo(gym.Env):
             if (np.abs(drone_heading[1] - centered_obs[1]) > FOV/2 or np.abs(drone_heading[2] - centered_obs[2]) > VERT_FOV/2):
                 reward = -100
             else:
-                reward = reward_dir - punish_dir - reward_dist + reward_speed
+                reward = reward_dir - punish_dir - punish_dist + reward_speed + self.reward_time_coef 
             print("reward_dir: ", reward_dir)
             print("punish_dir: ", punish_dir)
-            print("reward_dist: ", reward_dist)
+            print("punish_dist: ", punish_dist)
             print("reward_speed: ", reward_speed)
         print("reward: ", reward)
         done = 0
         if reward <= -50:
             done = 1
+            print("\n")
 
         return reward, done
 
@@ -146,16 +153,16 @@ class AirSimDroneEnvironmentTwo(gym.Env):
         return self._get_obs()
 
     def interpret_action(self, action):
-        # moveByAngleRatesThrottleAsync -roll_rate * -pitch_rate * -yaw_rate * -throttle * -duration 5
-        command = "moveByAngleRatesThrottleAsync -roll_rate "
+        command = "moveByRollPitchYawThrottleAsync -roll "
         command += str(action[0])
-        command += " -pitch_rate "
+        command += " -pitch "
         command += str(action[1])
-        command += " -yaw_rate "
+        command += " -yaw "
         command += str(action[2])
         command += " -throttle "
         command += str(action[3])
-        command += " -duration 5"
+        command += " -duration "
+        command += str(self.step_length)
 
         return command
 
