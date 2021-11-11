@@ -6,11 +6,11 @@ register(
 )
 
 register(
-    id="airsim-drone-sample-v1", entry_point="airgym.envs:AirSimDroneEnvironment",
+    id="airsim-drone-img-v0", entry_point="airgym.envs:AirSimDroneEnvironment",
 )
 
 register(
-    id="airsim-drone-sample-v2", entry_point="airgym.envs:AirSimDroneEnvironmentTwo",
+    id="airsim-drone-pos-v0", entry_point="airgym.envs:AirSimDroneEnvironmentTwo",
 )
 
 register(

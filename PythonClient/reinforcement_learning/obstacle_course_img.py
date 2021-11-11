@@ -19,21 +19,23 @@ env = DummyVecEnv(
     [
         lambda: Monitor(
             gym.make(
-                "airgym:airsim-drone-sample-v2",
+                "airgym:airsim-drone-img-v0", # Name of the Gym environment to use
+                punish_act_coef = 1, # punish the drone for rapid changes in the action space
                 reward_time_coef = 1, # reward the drone for every step it survives# reward the drone for every step it survives
                 reward_dir_coef = 0.5, # reward the similarity between the drone's forward heading and the obstacle's
                 punish_dir_coef = 5, # punish the change in the unit LOS vector
                 punish_dist_coef = 0.1, # reward the closeness of the drone and the obstacle
                 max_drone_angle = 90, # Maximum angle for target pitch, roll, and yaw for the drone's movement
-                ip_address="127.0.0.1",
-                step_length=0.25,
+                ip_address="127.0.0.1", # ip address of the airsim simulation
+                step_length=0.25, # Length of a training step in seconds
+                image_shape=(84, 84, 1), # Size of images to learn from
             )
         )
     ]
 )
 
 # Wrap env as VecTransposeImage to allow SB to handle frame observations
-# env = VecTransposeImage(env)
+env = VecTransposeImage(env)
 
 # Initialize RL algorithm type and parameters
 model = SAC(
