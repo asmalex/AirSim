@@ -25,9 +25,10 @@ env = DummyVecEnv(
                 reward_dir_coef = 0.5, # reward the similarity between the drone's forward heading and the obstacle's
                 punish_dir_coef = 5, # punish the change in the unit LOS vector
                 punish_dist_coef = 0.1, # reward the closeness of the drone and the obstacle
-                max_drone_angle = 90, # Maximum angle for target pitch, roll, and yaw for the drone's movement
+                action_magnitude = 10, # Maximum value for the vehicle's movement function
                 ip_address="127.0.0.1",
                 step_length=0.25,
+                action_type = 1 # Movement command used to control the drone
             )
         )
     ]

@@ -11,7 +11,7 @@ from airgym.envs.airsim_env import AirSimEnv
 
 
 class AirSimDroneEnvironment(AirSimEnv):
-    def __init__(self, punish_act_coef, reward_time_coef, reward_dir_coef, punish_dir_coef, punish_dist_coef, max_drone_angle, ip_address, step_length, image_shape, action_type = 0):
+    def __init__(self, punish_act_coef, reward_time_coef, reward_dir_coef, punish_dir_coef, punish_dist_coef, action_magnitude, ip_address, step_length, image_shape, action_type = 0):
         super().__init__(image_shape)
         self.step_length = step_length
         self.action_type = action_type
@@ -21,6 +21,7 @@ class AirSimDroneEnvironment(AirSimEnv):
         self.reward_dir_coef = reward_dir_coef 
         self.punish_dir_coef = punish_dir_coef 
         self.punish_dist_coef = punish_dist_coef 
+        self.action_magnitude = action_magnitude
 
         self.state = {
             "position": np.zeros(3),
@@ -32,12 +33,13 @@ class AirSimDroneEnvironment(AirSimEnv):
 
         # moveByRollPitchYawThrottleAsync -roll -pitch -yaw -throttle
         if self.action_type == 0:
-            self.action_space = spaces.Box(np.array([-max_drone_angle, -max_drone_angle, -max_drone_angle, 0.0], dtype=np.float32), np.array([max_drone_angle, max_drone_angle, max_drone_angle, 1.0], dtype=np.float32))  
-            self.max_drone_angle = max_drone_angle
+            self.action_space = spaces.Box(np.array([-action_magnitude, -action_magnitude, -action_magnitude, 0.0], dtype=np.float32), np.array([action_magnitude, action_magnitude, action_magnitude, 1.0], dtype=np.float32))  
+        # moveByVelocityBodyFrameAsync -vx -vy -vz -yaw_mode
+        elif self.action_type == 1:
+            self.action_space = spaces.Box(np.array([-action_magnitude, -action_magnitude, -action_magnitude, -180], dtype=np.float32), np.array([action_magnitude, action_magnitude, action_magnitude, 180], dtype=np.float32)) 
         else:
             print("ERROR: Action type " + str(self.action_type) + " not supported. Using moveByRollPitchYawThrottleAsync")
-            self.action_space = spaces.Box(np.array([-max_drone_angle, -max_drone_angle, -max_drone_angle, 0.0], dtype=np.float32), np.array([max_drone_angle, max_drone_angle, max_drone_angle, 1.0], dtype=np.float32))
-            self.max_drone_angle = max_drone_angle
+            self.action_space = spaces.Box(np.array([-action_magnitude, -action_magnitude, -action_magnitude, 0.0], dtype=np.float32), np.array([action_magnitude, action_magnitude, action_magnitude, 1.0], dtype=np.float32))  
 
         self._setup_flight()
 
@@ -78,11 +80,14 @@ class AirSimDroneEnvironment(AirSimEnv):
 
         # Orient the drone to face the obstacle
         centered_obs = AirSimDroneEnvironment.cartesianToPolar(self.last_unit_LOS[0], self.last_unit_LOS[1], self.last_unit_LOS[2]) # Position of the obstacle while allowing the drone's position to be the origin, in polar coordinates
-        self.drone.rotateToYawAsync((centered_obs[2] - drone_rot[2]) * 180/math.pi, timeout_sec=3e+38, margin=5).join() # Rotate Yaw to face the first obstacle
+        self.drone.rotateToYawAsync((centered_obs[2] - drone_rot[2]) * 180/math.pi, timeout_sec=3e+38, margin=2).join() # Rotate Yaw to face the first obstacle
 
         if self.action_type == 0:
             self.last_action = np.array([0.0, 0.0, 0.0, 0.5], dtype=np.float32)
             self.action = np.array([0.0, 0.0, 0.0, 0.5], dtype=np.float32)
+        elif self.action_type == 1:
+            self.last_action = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+            self.action = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
         else:
             self.last_action = np.array([0.0, 0.0, 0.0, 0.5], dtype=np.float32)
             self.action = np.array([0.0, 0.0, 0.0, 0.5], dtype=np.float32)
@@ -116,12 +121,16 @@ class AirSimDroneEnvironment(AirSimEnv):
         return image
 
     def _do_action(self, action):
-        command = self.interpret_action(action)
         if self.action_type == 0:
             print("action: ", float(action[0]), float(action[1]), float(action[2]), float(action[3]))
             self.last_action = self.action
             self.action = action
             self.drone.moveByRollPitchYawThrottleAsync(float(action[0]), float(action[1]), float(action[2]), float(action[3]), self.step_length).join()
+        elif self.action_type == 1:
+            print("action: ", float(action[0]), float(action[1]), float(action[2]), float(action[3]))
+            self.last_action = self.action
+            self.action = action
+            self.drone.moveByVelocityBodyFrameAsync(float(action[0]), float(action[1]), float(action[2]), self.step_length, yaw_mode = airsim.YawMode(is_rate = False, yaw_or_rate = float(action[3]))).join()
         else:
             print("action: ", float(action[0]), float(action[1]), float(action[2]), float(action[3]))
             self.last_action = self.action
@@ -175,10 +184,11 @@ class AirSimDroneEnvironment(AirSimEnv):
 
             # Punish the drone for rapid changes in the action space
             if self.action_type == 0:
-                punish_act = self.punish_act_coef * math.sqrt(((self.last_action[0] - self.action[0]) / self.max_drone_angle)**2 + ((self.last_action[1] - self.action[1]) / self.max_drone_angle)**2 + ((self.last_action[2] - self.action[2]) / self.max_drone_angle)**2 + (self.last_action[3] - self.action[3])**2)
+                punish_act = self.punish_act_coef * math.sqrt(((self.last_action[0] - self.action[0]) / self.action_magnitude)**2 + ((self.last_action[1] - self.action[1]) / self.action_magnitude)**2 + ((self.last_action[2] - self.action[2]) / self.action_magnitude)**2 + (self.last_action[3] - self.action[3])**2)
+            elif self.action_type == 1:
+                punish_act = self.punish_act_coef * math.sqrt(((self.last_action[0] - self.action[0]) / self.action_magnitude)**2 + ((self.last_action[1] - self.action[1]) / self.action_magnitude)**2 + ((self.last_action[2] - self.action[2]) / self.action_magnitude)**2 + ((self.last_action[3] - self.action[3]) / 180)**2)
             else:
-                punish_act = self.punish_act_coef * math.sqrt(((self.last_action[0] - self.action[0]) / self.max_drone_angle)**2 + ((self.last_action[1] - self.action[1]) / self.max_drone_angle)**2 + ((self.last_action[2] - self.action[2]) / self.max_drone_angle)**2 + (self.last_action[3] - self.action[3])**2)
-            
+                punish_act = self.punish_act_coef * math.sqrt(((self.last_action[0] - self.action[0]) / self.action_magnitude)**2 + ((self.last_action[1] - self.action[1]) / self.action_magnitude)**2 + ((self.last_action[2] - self.action[2]) / self.action_magnitude)**2 + (self.last_action[3] - self.action[3])**2) 
 
             # Punish the drone if the obstacle is not within the camera's FOV
             if (np.abs(drone_heading[1] - centered_obs[1]) > FOV/2 or np.abs(drone_heading[2] - centered_obs[2]) > VERT_FOV/2):
@@ -208,32 +218,6 @@ class AirSimDroneEnvironment(AirSimEnv):
     def reset(self):
         self._setup_flight()
         return self._get_obs()
-
-    def interpret_action(self, action):
-        if self.action_type == 0:
-            command = "moveByRollPitchYawThrottleAsync -roll "
-            command += str(action[0])
-            command += " -pitch "
-            command += str(action[1])
-            command += " -yaw "
-            command += str(action[2])
-            command += " -throttle "
-            command += str(action[3])
-            command += " -duration "
-            command += str(self.step_length)
-        else:
-            command = "moveByRollPitchYawThrottleAsync -roll "
-            command += str(action[0])
-            command += " -pitch "
-            command += str(action[1])
-            command += " -yaw "
-            command += str(action[2])
-            command += " -throttle "
-            command += str(action[3])
-            command += " -duration "
-            command += str(self.step_length)
-
-        return command
 
     def normalize(v):
         norm = np.linalg.norm(v)
