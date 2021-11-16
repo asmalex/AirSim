@@ -10,7 +10,7 @@ from gym import spaces
 from airgym.envs.airsim_env import AirSimEnv
 
 
-class AirSimDroneEnvironmentTwo(gym.Env):
+class AirSimDroneEnvironment(gym.Env):
     def __init__(self, punish_act_coef, reward_time_coef, reward_dir_coef, punish_dir_coef, punish_dist_coef, action_magnitude, ip_address, step_length, action_type = 0):
         self.observation_space = spaces.Box(-50, 50, shape=(2,7), dtype=np.float32)
         self.viewer = None
@@ -62,12 +62,12 @@ class AirSimDroneEnvironmentTwo(gym.Env):
         drone_or = [received.orientation.w_val, received.orientation.x_val, received.orientation.y_val, received.orientation.z_val] # Quaternion rotation put on the drone
         # v' = v + 2 * r x (s * v + r x v) / m
         drone_face = np.array([1,0,0]) + np.cross(2 * np.array(drone_or[1:]), drone_or[0]*np.array([1,0,0]) + np.cross(np.array(drone_or[1:]), np.array([1,0,0]))) / (drone_or[0]**2 + drone_or[1]**2 + drone_or[2]**2 + drone_or[3]**2)
-        drone_rot = AirSimDroneEnvironmentTwo.cartesianToPolar(drone_face[0], drone_face[1], drone_face[2])
+        drone_rot = AirSimDroneEnvironment.cartesianToPolar(drone_face[0], drone_face[1], drone_face[2])
 
-        self.last_unit_LOS = AirSimDroneEnvironmentTwo.normalize(obs_pos - drone_pos) # unit vector from the drone to the obstacle
+        self.last_unit_LOS = AirSimDroneEnvironment.normalize(obs_pos - drone_pos) # unit vector from the drone to the obstacle
 
         # Orient the drone to face the obstacle
-        centered_obs = AirSimDroneEnvironmentTwo.cartesianToPolar(self.last_unit_LOS[0], self.last_unit_LOS[1], self.last_unit_LOS[2]) # Position of the obstacle while allowing the drone's position to be the origin, in polar coordinates
+        centered_obs = AirSimDroneEnvironment.cartesianToPolar(self.last_unit_LOS[0], self.last_unit_LOS[1], self.last_unit_LOS[2]) # Position of the obstacle while allowing the drone's position to be the origin, in polar coordinates
         self.drone.rotateToYawAsync((drone_rot[2] - centered_obs[2]) * 180/math.pi, timeout_sec=3e+38, margin=2).join() # Rotate Yaw to face the first obstacle
 
         if self.action_type == 0:
@@ -110,12 +110,12 @@ class AirSimDroneEnvironmentTwo(gym.Env):
             drone_or = [received.orientation.w_val, received.orientation.x_val, received.orientation.y_val, received.orientation.z_val] # Quaternion rotation put on the drone
             # v' = v + 2 * r x (s * v + r x v) / m
             drone_face = np.array([1,0,0]) + np.cross(2 * np.array(drone_or[1:]), drone_or[0]*np.array([1,0,0]) + np.cross(np.array(drone_or[1:]), np.array([1,0,0]))) / (drone_or[0]**2 + drone_or[1]**2 + drone_or[2]**2 + drone_or[3]**2)
-            drone_rot = AirSimDroneEnvironmentTwo.cartesianToPolar(drone_face[0], drone_face[1], drone_face[2])
+            drone_rot = AirSimDroneEnvironment.cartesianToPolar(drone_face[0], drone_face[1], drone_face[2])
 
-            drone_or = AirSimDroneEnvironmentTwo.normalize(obs_pos - drone_pos)
+            drone_or = AirSimDroneEnvironment.normalize(obs_pos - drone_pos)
 
             # Orient the drone to face the obstacle
-            centered_obs = AirSimDroneEnvironmentTwo.cartesianToPolar(drone_or[0], drone_or[1], drone_or[2]) # Position of the obstacle while allowing the drone's position to be the origin, in polar coordinates
+            centered_obs = AirSimDroneEnvironment.cartesianToPolar(drone_or[0], drone_or[1], drone_or[2]) # Position of the obstacle while allowing the drone's position to be the origin, in polar coordinates
 
             print("action: ", float(action[0]), float(action[1]), float(action[2]), float((centered_obs[2] - drone_rot[2]) * 180/math.pi))
             self.last_action = self.action
@@ -144,7 +144,7 @@ class AirSimDroneEnvironmentTwo(gym.Env):
             drone_face = np.array([1,0,0]) + np.cross(2 * np.array(drone_or[1:]), drone_or[0]*np.array([1,0,0]) + np.cross(np.array(drone_or[1:]), np.array([1,0,0]))) / (drone_or[0]**2 + drone_or[1]**2 + drone_or[2]**2 + drone_or[3]**2)
 
             LOS = obs_pos - drone_pos # Vector from the drone to the obstacle
-            unit_LOS = AirSimDroneEnvironmentTwo.normalize(LOS) # unit vector from the drone to the obstacle
+            unit_LOS = AirSimDroneEnvironment.normalize(LOS) # unit vector from the drone to the obstacle
             LOS_change = math.sqrt((self.last_unit_LOS[0] - unit_LOS[0])**2 + (self.last_unit_LOS[1] - unit_LOS[1])**2 + (self.last_unit_LOS[2] - unit_LOS[2])**2) # Change in LOS since the last step
             self.last_unit_LOS = unit_LOS
             offset = math.sqrt((obs_face[0] - unit_LOS[0])**2 + (obs_face[1] - unit_LOS[1])**2 + (obs_face[2] - unit_LOS[2])**2) # difference between current heading and the heading corresponding to going straight through the obstacle
@@ -154,8 +154,8 @@ class AirSimDroneEnvironmentTwo(gym.Env):
             IMAGE_WIDTH = 256
             FOV = 90 * math.pi / 180
             VERT_FOV = FOV * IMAGE_HEIGHT / IMAGE_WIDTH
-            centered_obs = AirSimDroneEnvironmentTwo.cartesianToPolar(LOS[0], LOS[1], LOS[2]) # Position of the obstacle while allowing the drone's position to be the origin, in polar coordinates
-            drone_heading = AirSimDroneEnvironmentTwo.cartesianToPolar(drone_face[0], drone_face[1], drone_face[2]) # Angular heading of the drone in polar coordinates
+            centered_obs = AirSimDroneEnvironment.cartesianToPolar(LOS[0], LOS[1], LOS[2]) # Position of the obstacle while allowing the drone's position to be the origin, in polar coordinates
+            drone_heading = AirSimDroneEnvironment.cartesianToPolar(drone_face[0], drone_face[1], drone_face[2]) # Angular heading of the drone in polar coordinates
             
             reward_dir = self.reward_dir_coef * (2 - offset) # reward the similarity between the drone's forward heading and the obstacle's
             punish_dir = self.punish_dir_coef * LOS_change # punish the change in the unit LOS vector
