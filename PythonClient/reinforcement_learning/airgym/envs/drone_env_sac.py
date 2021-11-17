@@ -55,7 +55,9 @@ class AirSimDroneEnvironment(gym.Env):
         obs_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the obstacle
 
         # Move the drone to a starting position nearby the first obstacle
-        self.drone.moveToPositionAsync(obs_pos[0]-10, obs_pos[1]-5, obs_pos[2]-1, 1).join()
+        self.drone.moveToPositionAsync(obs_pos[0]-10, obs_pos[1]-20, obs_pos[2]+1, 1).join()
+
+        self.drone.rotateToYawAsync(0, timeout_sec=3e+38, margin=2).join() # Rotate yaw to face forward
 
         received = self.drone.simGetVehiclePose()
         drone_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the drone
@@ -68,7 +70,7 @@ class AirSimDroneEnvironment(gym.Env):
 
         # Orient the drone to face the obstacle
         centered_obs = AirSimDroneEnvironment.cartesianToPolar(self.last_unit_LOS[0], self.last_unit_LOS[1], self.last_unit_LOS[2]) # Position of the obstacle while allowing the drone's position to be the origin, in polar coordinates
-        self.drone.rotateToYawAsync((drone_rot[2] - centered_obs[2]) * 180/math.pi, timeout_sec=3e+38, margin=2).join() # Rotate Yaw to face the first obstacle
+        self.drone.rotateToYawAsync((centered_obs[1] - drone_rot[1]) * 180/math.pi, timeout_sec=3e+38, margin=2).join() # Rotate Yaw to face the first obstacle
 
         if self.action_type == 0:
             self.last_action = np.array([0.0, 0.0, 0.0, 0.5], dtype=np.float32)
@@ -117,10 +119,12 @@ class AirSimDroneEnvironment(gym.Env):
             # Orient the drone to face the obstacle
             centered_obs = AirSimDroneEnvironment.cartesianToPolar(drone_or[0], drone_or[1], drone_or[2]) # Position of the obstacle while allowing the drone's position to be the origin, in polar coordinates
 
-            print("action: ", float(action[0]), float(action[1]), float(action[2]), float((centered_obs[2] - drone_rot[2]) * 180/math.pi))
+            yaw = float((centered_obs[1] - drone_rot[1]) * 180/math.pi)
+            print("action: ", float(action[0]), float(action[1]), float(action[2]), yaw)
             self.last_action = self.action
             self.action = action
-            self.drone.moveByVelocityBodyFrameAsync(float(action[0]), float(action[1]), float(action[2]), self.step_length, yaw_mode = airsim.YawMode(is_rate = False, yaw_or_rate = float((drone_rot[2] - centered_obs[2]) * 180/math.pi))).join()
+            #TODO: Points drone in the opposite direction if it gets turned around
+            self.drone.moveByVelocityAsync(float(action[0]), float(action[1]), float(action[2]), self.step_length, yaw_mode = airsim.YawMode(is_rate = False, yaw_or_rate = yaw)).join()
         else:
             print("action: ", float(action[0]), float(action[1]), float(action[2]), float(action[3]))
             self.last_action = self.action
