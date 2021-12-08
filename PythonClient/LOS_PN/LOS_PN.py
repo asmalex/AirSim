@@ -23,7 +23,7 @@ def normalize(v):
     return v / norm
 
 NUM_OBS = 6 # The number of obstacles in the course
-PG = 3 # Proportional Gain for the control algorithm (Should be between 2 and 6)
+PG = 50 # Proportional Gain for the control algorithm (Should be between 2 and 6)
 
 # connect to the AirSim simulator
 client = airsim.MultirotorClient()
@@ -45,7 +45,6 @@ client.rotateToYawAsync(0, timeout_sec=3e+38, margin=2).join() # Rotate yaw to f
 
 received = client.simGetVehiclePose()
 last_drone_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the drone
-last_drone_or = [received.orientation.w_val, received.orientation.x_val, received.orientation.y_val, received.orientation.z_val] # Quaternion rotation put on the drone
 
 last_LOS = last_obs_pos - last_drone_pos # vector from the drone to the obstacle
 
@@ -55,7 +54,7 @@ t1 = time.time()
 client.moveByVelocityAsync(2000, 0, 0, 1, drivetrain = 1).join() # Move slightly in the direction of the first obstacle to ensure that the initial closing velocity is positive
 #time.sleep(1)
 
-while i < NUM_OBS + 1:
+while True:
     print("Moving towrds obstacle " + str(i) + "...\n")
     # Find the positions of the drone and the obstacle
     received = client.simGetObjectPose("Obstacle"+str(i))
@@ -73,17 +72,38 @@ while i < NUM_OBS + 1:
 
     LOS_rot = np.cross(LOS, relative_vel) / np.dot(LOS, LOS)
 
-    accel = np.cross(-1 * PG * np.linalg.norm(relative_vel) * LOS / np.linalg.norm(LOS), LOS_rot)
-    print(accel)
-
     current_vel = client.getMultirotorState().kinematics_estimated.linear_velocity
+    current_vel = np.array([current_vel.x_val, current_vel.y_val, current_vel.z_val])
 
-    client.moveByVelocityAsync(current_vel.x_val + accel[0], current_vel.y_val + accel[1], current_vel.z_val + accel[1], 1, drivetrain = 1).join()
+    accel = np.cross(-1 * PG * np.linalg.norm(relative_vel) * LOS / np.linalg.norm(LOS), LOS_rot)
 
-    last_LOS = LOS
+    
+    print("Current Velocity Length: ", np.linalg.norm(current_vel))
+    print("Acceleration Length: ", np.linalg.norm(accel))
+    print("Distance to obstacle: ", np.linalg.norm(LOS))
+
+    client.moveByVelocityAsync(current_vel[0] + accel[0], current_vel[1] + accel[1], current_vel[2] + accel[1], 5, drivetrain = 1).join()
+
+    if np.linalg.norm(LOS) < 1.5:
+        i = i + 1
+        if i > NUM_OBS:
+            break
+
+        received = client.simGetObjectPose("Obstacle" + str(i))
+        last_obs_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the obstacle
+
+        received = client.simGetVehiclePose()
+        last_drone_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the drone
+
+        last_LOS = last_obs_pos - last_drone_pos # vector from the drone to the obstacle
+
+        client.moveByVelocityAsync(current_vel[0] + accel[0], current_vel[1] + accel[1], current_vel[2] + accel[1], 5, drivetrain = 1).join()
+    else:
+        last_LOS = LOS
+        last_drone_pos = drone_pos
+        last_obs_pos = obs_pos
+
     t1 = t2
-    last_drone_pos = drone_pos
-    last_obs_pos = obs_pos
 
 client.reset()
 client.armDisarm(False)
