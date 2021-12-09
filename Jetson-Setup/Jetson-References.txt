@@ -1,0 +1,82 @@
+==============================
+NVIDIA Jetson Nano References
+==============================
+
+Jetpack SDK
+------------
+https://developer.nvidia.com/embedded/jetpack
+https://developer.nvidia.com/embedded/jetson-nano-developer-kit
+
+
+Hello AI World NVIDIA Jetson
+-----------------------------
+https://github.com/dusty-nv/jetson-inference
+https://github.com/dusty-nv/jetson-utils
+
+
+Installing TensorFlow for Jetson Platform
+------------------------------------------
+https://docs.nvidia.com/deeplearning/frameworks/install-tf-jetson-platform/index.html
+
+
+TensorRT Installation Guide
+----------------------------
+https://docs.nvidia.com/deeplearning/tensorrt/install-guide/index.html
+
+
+Understanding Nvidia TensorRT for deep learning model optimization
+-------------------------------------------------------------------
+https://medium.com/@abhaychaturvedi_72055/understanding-nvidias-tensorrt-for-deep-learning-model-optimization-dad3eb6b26d9
+
+
+Accelerating Inference In TF-TRT User Guide
+--------------------------------------------
+https://docs.nvidia.com/deeplearning/frameworks/tf-trt-user-guide/index.html
+
+
+TensorRT Quick Start Guide
+---------------------------
+https://docs.nvidia.com/deeplearning/tensorrt/quick-start-guide/index.html
+
+
+TensorRT Developer Guide
+-------------------------
+https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/index.html
+
+
+TensorFlow for Jetson Platform Release Notes
+---------------------------------------------
+https://docs.nvidia.com/deeplearning/frameworks/install-tf-jetson-platform-release-notes/tf-jetson-rel.html
+
+
+NVIDIA Containers
+------------------
+https://catalog.ngc.nvidia.com
+
+
+TensorFlow SavedModel Format
+-----------------------------
+https://www.tensorflow.org/guide/saved_model
+
+
+Building Tensorflow 2.0 with GPU support and TensorRT on Ubuntu 18.04 LTS
+--------------------------------------------------------------------------
+https://medium.com/analytics-vidhya/building-tensorflow-2-0-with-gpu-support-and-tensorrt-on-ubuntu-18-04-lts-part-2-ff2b1482c0a3
+
+
+JetCam
+-------
+https://github.com/NVIDIA-AI-IOT/jetcam
+
+
+TensorRT Resources
+----------------
+https://developer.nvidia.com/tensorrt
+https://github.com/NVIDIA/TensorRT
+https://github.com/NVIDIA/TensorRT/tree/main/quickstart/IntroNotebooks
+https://docs.nvidia.com/deeplearning/frameworks/tf-trt-user-guide/index.html#usingtftrt
+
+
+Bringing Cloud-Native Agility to Edge AI Devices with the NVIDIA Jetson Xavier NX Developer Kit
+------------------------------------------------------------------------------------------------
+https://developer.nvidia.com/blog/bringing-cloud-native-agility-to-edge-ai-with-jetson-xavier-nx/
