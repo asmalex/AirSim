@@ -11,6 +11,9 @@ import math
 import random
 from datetime import datetime
 import csv
+import cv2
+import numpy as np
+from PIL import Image
 
 PRECISION_ANGLE = 4 # Fractions of a degree used in generating random pitch, roll, and yaw values
 PRECISION_METER = 100 # Fractions of a meter used in generating random distance values
@@ -36,6 +39,11 @@ pp = pprint.PrettyPrinter(indent=4)
 client = airsim.VehicleClient()
 client.confirmConnection()
 
+if client.simSetSegmentationObjectID("Obstacle[\w]*", 0, True):
+    print("Segmentation color set to black")
+else:
+    print("Segmentation color specification failed")
+
 airsim.wait_key('Press any key to get camera parameters')
 camera_info = client.simGetCameraInfo(str(0))
 print("CameraInfo %d:" % 0)
@@ -53,63 +61,67 @@ except OSError:
 airsim.wait_key('Press any key to start generating images')
 e = 0
 while 1:
-    # generate a random position for our camera
+    # generate a random position for our obstacle
     r = random.randint(RADIUS_MIN * PRECISION_METER, RADIUS_MAX * PRECISION_METER) / PRECISION_METER
     phi = random.randint(0, 360 * PRECISION_ANGLE) / PRECISION_ANGLE
     theta = random.randint(0, 180 * PRECISION_ANGLE) / PRECISION_ANGLE
     # Convert polar coordinates to cartesian for AirSim
     pos = polarToCartesian(r, math.radians(theta), math.radians(phi))
 
+    # Generate a random angular position for the obstacle
+    pitch = random.randint(0, 180 * PRECISION_ANGLE) / PRECISION_ANGLE - 90.0
+    roll = random.randint(0, 360 * PRECISION_ANGLE) / PRECISION_ANGLE
+    yaw = random.randint(0, 360 * PRECISION_ANGLE) / PRECISION_ANGLE - 180
+
+    # Move the obstacle to our calculated position
+    object_pose = airsim.Pose(airsim.Vector3r(pos[0], pos[1], pos[2]), airsim.to_quaternion(math.radians(pitch), math.radians(roll), math.radians(yaw))) #radians
+    if not client.simSetObjectPose("Obstacle_3", object_pose, True):
+        print("Object pose setting failed")
+        break
+
     # Generate a random offset for the camera angle
-    pitch = random.randint(0, VERT_FOV * PRECISION_ANGLE) / PRECISION_ANGLE - VERT_FOV / 2
+    cam_pitch = random.randint(0, VERT_FOV * PRECISION_ANGLE) / PRECISION_ANGLE - VERT_FOV / 2
     # TODO: Rotating the drone causes the obstacle to be removed from the image because the camera is not square
-    #roll = random.randint(0, 360 * PRECISION_ANGLE) / PRECISION_ANGLE
-    roll = 0
-    yaw = random.randint(0, FOV * PRECISION_ANGLE) / PRECISION_ANGLE - FOV/2
+    #cam_roll = random.randint(0, 360 * PRECISION_ANGLE) / PRECISION_ANGLE
+    cam_roll = 0
+    cam_yaw = random.randint(0, FOV * PRECISION_ANGLE) / PRECISION_ANGLE - FOV/2
 
-    # Calculate coordinates of the center of the obstacle relative to the drone's new position and orientation
-    # To use global coordinates, use the recorded global position of the camera where the obstacle is at [0,0,0]
-    obs_r = r
-    obs_phi = yaw
-    obs_theta = 90 - pitch
-    # Convert polar coordinates to cartesian for AirSim
-    obs_pos = polarToCartesian(obs_r, math.radians(obs_theta), math.radians(obs_phi))
-
-    # Record rotational transformation on obstacle for calculating coordinates of key locations relative to the center.
-    # These can be used to recover any point on the object by translating the object to the origin, applying rotation matrices, then translating back to its position
-    obs_phi_offset = -phi
-    obs_theta_offset = -theta
-
-    # Move the camera to our calculated position
-    camera_pose = airsim.Pose(airsim.Vector3r(pos[0], pos[1], pos[2]), airsim.to_quaternion(math.radians(90 - theta + pitch), math.radians(roll), math.radians(phi + 180 + yaw))) #radians
+    # Set the camera to face the object
+    camera_pose = airsim.Pose(airsim.Vector3r(0, 0, 0), airsim.to_quaternion(math.radians(theta - 90 + cam_pitch), math.radians(cam_roll), math.radians(phi + cam_yaw))) #radians
     client.simSetVehiclePose(camera_pose, True)
 
     responses = client.simGetImages([
         #airsim.ImageRequest("0", airsim.ImageType.DepthVis),
         #airsim.ImageRequest("0", airsim.ImageType.DepthPerspective, True),
-        #airsim.ImageRequest("0", airsim.ImageType.Segmentation),
-        airsim.ImageRequest("0", airsim.ImageType.Scene),
+        airsim.ImageRequest("0", airsim.ImageType.Segmentation, False, False),
+        airsim.ImageRequest("0", airsim.ImageType.Scene, False, False),
         #airsim.ImageRequest("0", airsim.ImageType.DisparityNormalized),
         #airsim.ImageRequest("0", airsim.ImageType.SurfaceNormals)
         ])
+
+    pose = client.simGetVehiclePose()
 
     # Print image responses to files
     for i, response in enumerate(responses):
         filename = os.path.join(tmp_dir, str(e) + "_" + str(i))
         if response.pixels_as_float:
-            print("Type %d, size %d, pos %s" % (response.image_type, len(response.image_data_float), pprint.pformat(response.camera_position)))
-            airsim.write_pfm(os.path.normpath(filename + '.pfm'), airsim.get_pfm_array(response))
+            print("Pixels as float not implemented")
+            break
         else:
+            img1d = np.fromstring(response.image_data_uint8, dtype=np.uint8) #get numpy array
+            img_bgr = img1d.reshape(response.height, response.width, 3) #reshape array to 3 channel image array H X W X 3
+            img_bgr = np.flipud(img_bgr) #original image is fliped vertically
+            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB) # Change from Airsim's BGR to an RGB image
             print("Type %d, size %d, pos %s" % (response.image_type, len(response.image_data_uint8), pprint.pformat(response.camera_position)))
-            airsim.write_file(os.path.normpath(filename + '.png'), response.image_data_uint8)
+            np.save(filename, img_rgb)
+            im = Image.fromarray(img_rgb)
+            im.save(filename + ".jpeg")
         # Create coordinate label file
         with open(filename + '.csv', 'w', newline='') as csvfile:
             writer = csv.writer(csvfile, delimiter=',')
-            writer.writerow([str(pos[i]) for i in range(len(pos))])
-            writer.writerow([str(obs_pos[i]) for i in range(len(obs_pos))])
-            writer.writerow([obs_phi_offset, obs_theta_offset])
+            writer.writerow([str(object_pose.orientation.w_val), str(object_pose.orientation.x_val), str(object_pose.orientation.y_val), str(object_pose.orientation.z_val), str(object_pose.position.x_val), str(object_pose.position.y_val), str(object_pose.position.z_val)])
+            writer.writerow([str(pose.orientation.w_val), str(pose.orientation.x_val), str(pose.orientation.y_val), str(pose.orientation.z_val), str(pose.position.x_val), str(pose.position.y_val), str(pose.position.z_val)])
 
-    pose = client.simGetVehiclePose()
     pp.pprint(pose)
 
     e += 1
