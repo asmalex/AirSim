@@ -391,4 +391,4 @@ PythonClient/docs/_build
 cmake/
 
 # Dataset for CNN Object detection
-PythonClient/computer_vision/airsim_cv_mode
+PythonClient/computer_vision/Dataset/airsim_cv_mode
