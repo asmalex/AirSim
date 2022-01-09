@@ -8,6 +8,8 @@ import pprint
 import cv2
 import math
 import time
+import threading
+from PIL import Image
 
 # Camera details should match settings.json
 IMAGE_HEIGHT = 144
@@ -45,6 +47,10 @@ def normalize(v):
         return v
     return v / norm
 
+def printImage(image):
+    im = Image.fromarray(image)
+    im.show()
+
 def getBoundBox():
     responses = client.simGetImages([
     #airsim.ImageRequest("0", airsim.ImageType.DepthVis),
@@ -59,6 +65,9 @@ def getBoundBox():
     img_bgr = img1d.reshape(response.height, response.width, 3) #reshape array to 3 channel image array H X W X 3
     #img_bgr = np.flipud(img_bgr) #original image is fliped vertically
     image = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB) # Change from Airsim's BGR to an RGB image
+
+    x = threading.Thread(target=printImage, args=(image,), daemon=True)
+    x.start()
 
     u = -1 # Highest point of the obstacle
     b = -1 # Lowest point of the obstacle
@@ -103,7 +112,7 @@ client.armDisarm(True)
 client.takeoffAsync().join()
 
 # Move the drone to a starting position nearby the first obstacle
-client.moveToPositionAsync(last_obs_pos[0]-20, last_obs_pos[1]-5, last_obs_pos[2]-1, 1).join()
+client.moveToPositionAsync(last_obs_pos[0]-30, last_obs_pos[1]-5, last_obs_pos[2]-1, 1).join()
 
 client.rotateToYawAsync(0, timeout_sec=3e+38, margin=2).join() # Rotate yaw to face forward
 
@@ -113,8 +122,8 @@ while True:
     depth = getDepth(bounds[1] - bounds[0], bounds[3] - bounds[2]) # Estimated distance to the obstacle in meters
     pixel_size = 2.2 / max(bounds[1] - bounds[0], bounds[3] - bounds[2]) # number of meters per pixel in the surface of the sphere of radius 'depth'. Obtained by comparing the known size of the obstacle to the number of pixels it includes
 
-    yaw_angle = (CENTER[0] - center[0]) * pixel_size / depth # yaw angle from the camera center to the center of the obstacle, calculated using the arc length formula
-    pitch_angle = (CENTER[1] - center[1]) * pixel_size / depth # pitch angle from the camera center to the center of the obstacle, calculated using the arc length formula
+    yaw_angle = (center[0] - CENTER[0]) * pixel_size / depth # yaw angle from the camera center to the center of the obstacle, calculated using the arc length formula
+    pitch_angle = (center[0] - CENTER[0]) * pixel_size / depth # pitch angle from the camera center to the center of the obstacle, calculated using the arc length formula
 
     vector = polarToCartesian(1, pitch_angle + 90, yaw_angle) # Unit LOS Vector, defined in the Cartesian axis relative to the drone
 
