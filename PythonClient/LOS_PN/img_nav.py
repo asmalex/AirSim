@@ -24,10 +24,20 @@ NUM_OBS = 6 # The number of obstacles in the course
 
 VEL = 5 # Target velocity along the LOS vector
 
+# TODO: Estimate depth from image
+'''
 def getDepth(h,w):
     # Constants calibrated from image_calibrator.py
     #  2.76588914e+01 6.76894450e-02  7.40320895e+00  8.81630020e-03 -2.69137285e-01
     return 27.6588914 * np.exp(-0.0676894450 * h) + 7.40320895 * np.exp(-0.00881630020 * w) + 0.269137285
+'''
+def getDepth(h,w):
+    received = client.simGetObjectPose("Obstacle1")
+    obs_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the obstacle
+    received = client.simGetVehiclePose() # TODO: Simulation specific API. Replace with Kinematics orientation estimation and/or GPS position
+    drone_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the drone
+
+    return np.linalg.norm(obs_pos - drone_pos)
 
 def cartesianToPolar(x,y,z):
     return [
@@ -48,7 +58,14 @@ def normalize(v):
     return v / norm
 
 def printImage(image):
-    im = Image.fromarray(image)
+    mask =  np.full_like(image, 255)
+
+    for i in range(len(image)):
+        for j in range(len(image[i])):
+            if np.array_equal(image[i][j], [0,0,0]):
+                mask[i][j] = [0,0,0]
+
+    im = Image.fromarray(mask)
     im.show()
 
 def getBoundBox():
@@ -125,7 +142,12 @@ while True:
     yaw_angle = (center[0] - CENTER[0]) * pixel_size / depth # yaw angle from the camera center to the center of the obstacle, calculated using the arc length formula
     pitch_angle = (center[0] - CENTER[0]) * pixel_size / depth # pitch angle from the camera center to the center of the obstacle, calculated using the arc length formula
 
-    vector = polarToCartesian(1, pitch_angle + 90, yaw_angle) # Unit LOS Vector, defined in the Cartesian axis relative to the drone
+    print(depth)
+    print(yaw_angle,pitch_angle)
+
+    vector = polarToCartesian(1, pitch_angle + 0.5 * math.pi, yaw_angle) # Unit LOS Vector, defined in the Cartesian axis relative to the drone
+
+    # TODO: Test quaternion math and/or BodyFrame function
 
     received = client.simGetVehiclePose() # TODO: Simulation specific API. Replace with Kinematics orientation estimation and/or GPS position
     # drone_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the drone
@@ -134,8 +156,9 @@ while True:
     drone_or_inv = [drone_or[0]/(drone_or[0]**2 + drone_or[1]**2 + drone_or[2]**2 + drone_or[3]**2), -drone_or[1]/(drone_or[0]**2 + drone_or[1]**2 + drone_or[2]**2 + drone_or[3]**2), -drone_or[2]/(drone_or[0]**2 + drone_or[1]**2 + drone_or[2]**2 + drone_or[3]**2), -drone_or[3]/(drone_or[0]**2 + drone_or[1]**2 + drone_or[2]**2 + drone_or[3]**2)] # Inverse quaternion of drone's orientation used to convert from Bodyframe to Worldframe
     # v' = v + 2 * r x (s * v + r x v) / m
     LOS = np.array(vector) + np.cross(2 * np.array(drone_or_inv[1:]), drone_or_inv[0]*np.array(vector) + np.cross(np.array(drone_or_inv[1:]), np.array(vector))) / (drone_or_inv[0]**2 + drone_or_inv[1]**2 + drone_or_inv[2]**2 + drone_or_inv[3]**2) # Image of LOS vector under inverse quaternion
+    print(LOS)
 
-    client.moveByVelocityBodyFrameAsync(VEL * vector[0], VEL * vector[1], VEL * vector[2] * -1, 2).join()
+    client.moveByVelocityBodyFrameAsync(VEL * vector[0], -1 * VEL * vector[1], -1 * VEL * vector[2], 2).join()
 
 client.reset()
 client.armDisarm(False)
