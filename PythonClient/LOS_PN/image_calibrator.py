@@ -11,10 +11,9 @@ import matplotlib.pyplot as plt
 
 
 
-def func(x, a, b, c):
-    return a * np.exp(-b * x) + c
-
-
+def func(X, a1, b1, a2, b2, c):
+    x,y = X
+    return a1 * np.exp(-b1 * x) + a2 * np.exp(-b2 * y) + c
 
 # Camera details should match settings.json
 IMAGE_HEIGHT = 144
@@ -25,7 +24,7 @@ VERT_FOV = FOV * IMAGE_HEIGHT // IMAGE_WIDTH
 
 OBS_LEN = 2.2 # Obstacle diameter in meters
 DIST_MIN = 2 # Distance from obstacle in meters
-DIST_MAX = 50 # Distance from obstacle in meters
+DIST_MAX = 20 # Distance from obstacle in meters
 STEP = 500
 
 client = airsim.VehicleClient()
@@ -38,10 +37,10 @@ else:
 
 airsim.wait_key('Press any key to calculate the effective distacnce of the image from the drone')
 
-xdata = np.linspace(DIST_MIN, DIST_MAX, STEP)
-ydata = []
+ydata = np.linspace(DIST_MIN, DIST_MAX, STEP)
+xdata = []
 
-for dist in xdata:
+for dist in ydata:
     # Move the obstacle in front of our drone
     object_pose = airsim.Pose(airsim.Vector3r(dist, 0, 0), airsim.to_quaternion(0, 0, 0)) 
     if not client.simSetObjectPose("Obstacle_3", object_pose, True):
@@ -75,16 +74,23 @@ for dist in xdata:
 
     obs_len = b-u # Obstacle diameter in pixels
 
-    scalar = obs_len / OBS_LEN * dist # Effective distance from the object in 'pixels'
-    print(scalar)
-    ydata.append(scalar)
+    l = -1
+    r = -1
+
+    for i in range(len(image[0])):
+        for j in range(len(image)):
+            if np.array_equal(image[j][i], [0,0,0]):
+                if l == -1:
+                    l = i
+                r = i
+
+    print(b-u,r-l)
+
+    xdata.append([b-u, r-l])
+
+xdata = ([x[0] for x in xdata], [x[1] for x in xdata])
+print(np.array(xdata).shape)
+print(np.array(ydata).shape)
 
 parameters, covariance = curve_fit(func, xdata, ydata)
 print("parameters: ", parameters)
-
-plt.plot(xdata, ydata, 'b-', label='data')
-plt.plot(xdata, func(xdata, *parameters), 'r-', label='fit: a=%5.3f, b=%5.3f, c=%5.3f' % tuple(parameters))
-plt.xlabel('x')
-plt.ylabel('y')
-plt.legend()
-plt.show()
