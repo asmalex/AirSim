@@ -392,3 +392,4 @@ cmake/
 
 # Dataset for CNN Object detection
 PythonClient/computer_vision/Dataset/airsim_cv_mode
+PythonClient/LOS_PN/.ipynb_checkpoints/
