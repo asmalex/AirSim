@@ -10,6 +10,7 @@ import math
 import time
 import threading
 from PIL import Image
+import random
 
 # Camera details should match settings.json
 IMAGE_HEIGHT = 144
@@ -22,7 +23,7 @@ VERT_FOV = FOV * IMAGE_HEIGHT // IMAGE_WIDTH
 OBS_LEN = 2.2 # Obstacle diameter in meters
 NUM_OBS = 6 # The number of obstacles in the course
 
-VEL = 5 # Target velocity along the LOS vector
+VEL = 0.1 # Target velocity along the LOS vector
 
 '''
 # Ground truth depth function
@@ -38,8 +39,8 @@ def getDepth(h,w):
 
 def getDepth(h,w):
     # Constants calibrated from image_calibrator.py
-    #  2.76588914e+01 6.76894450e-02  7.40320895e+00  8.81630020e-03 -2.69137285e-01
-    return 27.6588914 * np.exp(-0.0676894450 * h) + 7.40320895 * np.exp(-0.00881630020 * w) + 0.269137285
+    #  8.89922094  0.0304452  13.7360959   0.02951979  0.10829337
+    return 8.89922094 * np.exp(-0.0304452 * h) + 13.7360959 * np.exp(-0.02951979 * w) + 0.10829337
 
 def cartesianToPolar(x,y,z):
     return [
@@ -112,6 +113,13 @@ def getBoundBox():
     j = l + (r-l)//2
     return ([i,j] , [u,b,l,r])
 
+#TODO: Drone navigates to the right side of the obstacle regardless of starting position. Corrections to tragectory occur but happen to late
+
+# Generate offsets for the drone's starting position
+x = random.randint(-50,-40)
+y = random.randint(-10,10)
+z = random.randint(-10,10)
+
 # connect to the AirSim simulator
 client = airsim.MultirotorClient()
 client.confirmConnection()
@@ -131,21 +139,23 @@ client.armDisarm(True)
 client.takeoffAsync().join()
 
 # Move the drone to a starting position nearby the first obstacle
-client.moveToPositionAsync(last_obs_pos[0]-30, last_obs_pos[1]-5, last_obs_pos[2]-1, 1).join()
+client.moveToPositionAsync(last_obs_pos[0]+x, last_obs_pos[1]+y, last_obs_pos[2]+z, 1).join()
 
-client.rotateToYawAsync(45, timeout_sec=3e+38, margin=2).join() # Rotate yaw to face forward
+# client.rotateToYawAsync(0, timeout_sec=3e+38, margin=2).join() # Rotate yaw to face forward
 
+tm = time.time()
 while True:
     center, bounds = getBoundBox() # The coordinates for the bounding box of the obstacle
-    print(center, bounds)
+    print("center: ", center)
+    print("size: ", [bounds[1] - bounds[0], bounds[3] - bounds[2]])
     depth = getDepth(bounds[1] - bounds[0], bounds[3] - bounds[2]) # Estimated distance to the obstacle in meters
+    print("depth: ", depth)
     pixel_size = 2.2 / max(bounds[1] - bounds[0], bounds[3] - bounds[2]) # number of meters per pixel in the surface of the sphere of radius 'depth'. Obtained by comparing the known size of the obstacle to the number of pixels it includes
 
     yaw_angle = (center[1] - CENTER[1]) * pixel_size / depth # yaw angle from the camera center to the center of the obstacle, calculated using the arc length formula
     pitch_angle = (center[0] - CENTER[0]) * pixel_size / depth # pitch angle from the camera center to the center of the obstacle, calculated using the arc length formula
 
-    print(depth)
-    print(yaw_angle,pitch_angle)
+    print("angles: ", yaw_angle,pitch_angle)
 
     vector = polarToCartesian(1, pitch_angle + 0.5 * math.pi, -1 * yaw_angle) # Unit LOS Vector, defined in the Cartesian axis relative to the drone
 
@@ -162,8 +172,16 @@ while True:
     print(LOS)
     '''
 
+    # velocity is proportional to the estimated distance from the object
+    velocity = VEL*max(depth, 0.25)
 
-    client.moveByVelocityBodyFrameAsync(VEL * vector[0], -1 * VEL * vector[1], -1 * VEL * vector[2], 1, 1).join()
+    print("Velocity: ", velocity)
+
+    print("Processing time: ", time.time() - tm)
+
+    client.moveByVelocityBodyFrameAsync(velocity * vector[0], -1 * velocity * vector[1], -1 * velocity * vector[2], 1)
+
+    tm = time.time()
 
 client.reset()
 client.armDisarm(False)

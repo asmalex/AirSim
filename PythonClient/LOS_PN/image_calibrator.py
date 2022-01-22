@@ -5,9 +5,12 @@ import numpy as np
 import pprint
 import cv2
 import math
+import random
 from scipy.optimize import curve_fit
 
 import matplotlib.pyplot as plt
+
+#RESULTS: 8.89922094  0.0304452  13.7360959   0.02951979  0.10829337
 
 
 
@@ -15,17 +18,26 @@ def func(X, a1, b1, a2, b2, c):
     x,y = X
     return a1 * np.exp(-b1 * x) + a2 * np.exp(-b2 * y) + c
 
+def polarToCartesian(r, theta, phi):
+    return [
+         r * math.sin(theta) * math.cos(phi),
+         r * math.sin(theta) * math.sin(phi),
+         r * math.cos(theta)]
+
+OBS_LEN = 2.2 # Obstacle diameter in meters
+DIST_MIN = 2 # Distance from obstacle in meters
+DIST_MAX = 20 # Distance from obstacle in meters
+STEP = 500
+
+PRECISION_ANGLE = 4 # Fractions of a degree used in generating random pitch, roll, and yaw values
+PRECISION_METER = 100 # Fractions of a meter used in generating random distance values
+
 # Camera details should match settings.json
 IMAGE_HEIGHT = 144
 IMAGE_WIDTH = 256
 FOV = 90
 # TODO: Vertical FOV rounds down for generating random integers. Some pictures will not be created
 VERT_FOV = FOV * IMAGE_HEIGHT // IMAGE_WIDTH
-
-OBS_LEN = 2.2 # Obstacle diameter in meters
-DIST_MIN = 2 # Distance from obstacle in meters
-DIST_MAX = 20 # Distance from obstacle in meters
-STEP = 500
 
 client = airsim.VehicleClient()
 client.confirmConnection()
@@ -38,13 +50,38 @@ else:
 airsim.wait_key('Press any key to calculate the effective distacnce of the image from the drone')
 
 ydata = np.linspace(DIST_MIN, DIST_MAX, STEP)
+ydata = np.ndarray.flatten(np.array([[y, y, y, y] for y in ydata]))
 xdata = []
 
 for dist in ydata:
-    # Move the obstacle in front of our drone
-    object_pose = airsim.Pose(airsim.Vector3r(dist, 0, 0), airsim.to_quaternion(0, 0, 0)) 
+    # generate a random position for our obstacle
+    r = dist
+    phi = random.randint(0, 360 * PRECISION_ANGLE) / PRECISION_ANGLE
+    theta = random.randint(0, 180 * PRECISION_ANGLE) / PRECISION_ANGLE
+    # Convert polar coordinates to cartesian for AirSim
+    pos = polarToCartesian(r, math.radians(theta), math.radians(phi))
+
+    # Generate a random angular position for the obstacle
+    pitch = random.randint(0, 180 * PRECISION_ANGLE) / PRECISION_ANGLE - 90.0
+    roll = random.randint(0, 360 * PRECISION_ANGLE) / PRECISION_ANGLE
+    yaw = random.randint(0, 360 * PRECISION_ANGLE) / PRECISION_ANGLE - 180
+
+    # Move the obstacle to our calculated position
+    object_pose = airsim.Pose(airsim.Vector3r(pos[0], pos[1], pos[2]), airsim.to_quaternion(math.radians(pitch), math.radians(roll), math.radians(yaw))) #radians
     if not client.simSetObjectPose("Obstacle_3", object_pose, True):
-            print("Object pose setting failed")
+        print("Object pose setting failed")
+        break
+
+    # Generate a random offset for the camera angle
+    cam_pitch = random.randint(0, VERT_FOV * PRECISION_ANGLE) / PRECISION_ANGLE - VERT_FOV / 2
+    # TODO: Rotating the drone causes the obstacle to be removed from the image because the camera is not square
+    #cam_roll = random.randint(0, 360 * PRECISION_ANGLE) / PRECISION_ANGLE
+    cam_roll = 0
+    cam_yaw = random.randint(0, FOV * PRECISION_ANGLE) / PRECISION_ANGLE - FOV/2
+
+    # Set the camera to face the object
+    camera_pose = airsim.Pose(airsim.Vector3r(0, 0, 0), airsim.to_quaternion(math.radians(theta - 90 + cam_pitch), math.radians(cam_roll), math.radians(phi + cam_yaw))) #radians
+    client.simSetVehiclePose(camera_pose, True)
 
     responses = client.simGetImages([
             #airsim.ImageRequest("0", airsim.ImageType.DepthVis),

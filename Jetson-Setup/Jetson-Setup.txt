@@ -1,4 +1,4 @@
-=========================
+﻿=========================
 NVIDIA Jetson Nano Setup
 =========================
 
@@ -57,22 +57,6 @@ $ docker/run.sh
 
 iii) Building the Docker container (recommended)
 *************************************************
-If you wish to re-build the container or build your own, you can use the docker/build.sh script which builds the project's Dockerfile:
-
-I have modified the original Dockerfile to include the installation of TensorFlow. Replace the original Dockerfile with the modified Dockerfile at:
-~/jetson-inference/Dockerfile
-
-###########################################################################################################
-IMPORTANT NOTE: do not "sudo apt upgrade" the system as doing so will break the container building process
-###########################################################################################################
-
-$ git clone --recursive https://github.com/dusty-nv/jetson-inference
-$ cd jetson-inference
-$ docker/build.sh
-$ sudo docker images (this command should list jetson-inference repository with tag r32.6.1)
-$ docker/run.sh
-
-######################################################################################################
 IMPORTANT NOTE: you should first set your default docker-runtime to nvidia
 
 To enable access to the CUDA compiler (nvcc) during docker build operations, add "default-runtime": "nvidia" to your /etc/docker/daemon.json configuration file before attempting to build the containers:
@@ -88,4 +72,20 @@ To enable access to the CUDA compiler (nvcc) during docker build operations, add
     "default-runtime": "nvidia"
 }
 You will then want to restart the Docker service or reboot your system before proceeding.
+######################################################################################################
+If you wish to re-build the container or build your own, you can use the docker/build.sh script which builds the project's Dockerfile:
+
+I have modified the original Dockerfile to include the installation of TensorFlow. Replace the original Dockerfile with the modified Dockerfile at:
+~/jetson-inference/Dockerfile
+
+###########################################################################################################
+IMPORTANT NOTE: do not "sudo apt upgrade" the system as doing so will break the container building process
+###########################################################################################################
+
+$ git clone --recursive https://github.com/dusty-nv/jetson-inference
+$ cd jetson-inference
+$ docker/build.sh
+$ sudo docker images (this command should list jetson-inference repository with tag r32.6.1)
+$ docker/run.sh
+
 ######################################################################################################
