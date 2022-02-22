@@ -1,0 +1,6 @@
+[submodule "DetectionLibraries/yolov3"]
+	path = DetectionLibraries/yolov3
+	url = https://github.com/Gastastrophe/yolov3
+[submodule "DetectionLibraries/tensorrtx"]
+	path = DetectionLibraries/tensorrtx
+	url = https://github.com/Gastastrophe/tensorrtx
