@@ -75,7 +75,7 @@ while 1:
 
     # Move the obstacle to our calculated position
     object_pose = airsim.Pose(airsim.Vector3r(pos[0], pos[1], pos[2]), airsim.to_quaternion(math.radians(pitch), math.radians(roll), math.radians(yaw))) #radians
-    if not client.simSetObjectPose("Obstacle_3", object_pose, True):
+    if not client.simSetObjectPose("Obstacle1", object_pose, True):
         print("Object pose setting failed")
         break
 
@@ -103,7 +103,6 @@ while 1:
 
     # Print image responses to files
     for i, response in enumerate(responses):
-        filename = os.path.join(tmp_dir, str(e) + "_" + str(i))
         if response.pixels_as_float:
             print("Pixels as float not implemented")
             break
@@ -113,14 +112,51 @@ while 1:
             img_bgr = np.flipud(img_bgr) #original image is fliped vertically
             img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB) # Change from Airsim's BGR to an RGB image
             print("Type %d, size %d, pos %s" % (response.image_type, len(response.image_data_uint8), pprint.pformat(response.camera_position)))
-            np.save(filename, img_rgb)
+            #np.save(filename, img_rgb)
             im = Image.fromarray(img_rgb)
+            if e % 5 == 0:
+                filename = tmp_dir + "\\images\\validation\\" + str(e) + "_" + str(i)
+            else:
+                filename = tmp_dir + "\\images\\train\\" + str(e) + "_" + str(i)
+            print(tmp_dir,filename)
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
             im.save(filename + ".jpeg")
         # Create coordinate label file
-        with open(filename + '.csv', 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile, delimiter=',')
-            writer.writerow([str(object_pose.orientation.w_val), str(object_pose.orientation.x_val), str(object_pose.orientation.y_val), str(object_pose.orientation.z_val), str(object_pose.position.x_val), str(object_pose.position.y_val), str(object_pose.position.z_val)])
-            writer.writerow([str(pose.orientation.w_val), str(pose.orientation.x_val), str(pose.orientation.y_val), str(pose.orientation.z_val), str(pose.position.x_val), str(pose.position.y_val), str(pose.position.z_val)])
+        if (i==0):  
+            if e % 5 == 0:
+                filename = tmp_dir + "\\labels\\validation\\" + str(e) + "_" + str(i)
+            else:
+                filename = tmp_dir + "\\labels\\train\\" + str(e) + "_" + str(i)
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
+            with open(filename + '.txt', 'w') as txtwriter:
+                img1d = np.fromstring(response.image_data_uint8, dtype=np.uint8) #get numpy array
+                img_bgr = img1d.reshape(response.height, response.width, 3) #reshape array to 3 channel image array H X W X 3
+                image = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB) # Change from Airsim's BGR to an RGB image
+                u = -1 # Highest point of the obstacle
+                b = -1 # Lowest point of the obstacle
+
+                for i in range(len(image)):
+                    for j in range(len(image[i])):
+                        if np.array_equal(image[i][j], [0,0,0]):
+                            if u == -1:
+                                u = i
+                            b = i
+
+                l = -1 # Leftmost point of the obstacle
+                r = -1 # Rightmost point of the obstacle
+
+                for j in range(len(image[0])):
+                    for i in range(len(image)):
+                        if np.array_equal(image[i][j], [0,0,0]):
+                            if l == -1:
+                                l = j
+                            r = j
+
+                y_center = (u + (b-u)/2)/IMAGE_HEIGHT
+                x_center = (l + (r-l)/2)/IMAGE_WIDTH
+                height = (b-u)/IMAGE_HEIGHT
+                width = (r-l)/IMAGE_WIDTH
+                txtwriter.write('0 ' + str(x_center) + ' ' + str(y_center) + ' ' + str(width) + ' ' + str(height))
 
     pp.pprint(pose)
 
