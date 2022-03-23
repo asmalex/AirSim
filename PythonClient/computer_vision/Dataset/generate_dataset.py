@@ -50,7 +50,8 @@ print("CameraInfo %d:" % 0)
 pp.pprint(camera_info)
 
 tmp_dir = os.path.join(os.getcwd(), "airsim_cv_mode")
-tmp_dir = os.path.join(tmp_dir, datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+date = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+tmp_dir = os.path.join(tmp_dir, date)
 print ("Saving images to %s" % tmp_dir)
 try:
     os.makedirs(tmp_dir)
@@ -112,26 +113,15 @@ while 1:
             img_bgr = np.flipud(img_bgr) #original image is fliped vertically
             img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB) # Change from Airsim's BGR to an RGB image
             print("Type %d, size %d, pos %s" % (response.image_type, len(response.image_data_uint8), pprint.pformat(response.camera_position)))
-            #np.save(filename, img_rgb)
-            im = Image.fromarray(img_rgb)
-            if e % 5 == 0:
-                filename = tmp_dir + "\\images\\validation\\" + str(e) + "_" + str(i)
-            else:
-                filename = tmp_dir + "\\images\\train\\" + str(e) + "_" + str(i)
-            print(tmp_dir,filename)
-            os.makedirs(os.path.dirname(filename), exist_ok=True)
-            im.save(filename + ".jpeg")
         # Create coordinate label file
         if (i==0):  
             if e % 5 == 0:
-                filename = tmp_dir + "\\labels\\validation\\" + str(e) + "_" + str(i)
+                filename = tmp_dir + "\\labels\\validation\\" + date + "_" + str(e) + '.txt'
             else:
-                filename = tmp_dir + "\\labels\\train\\" + str(e) + "_" + str(i)
+                filename = tmp_dir + "\\labels\\train\\" + date + "_" + str(e) + '.txt'
             os.makedirs(os.path.dirname(filename), exist_ok=True)
-            with open(filename + '.txt', 'w') as txtwriter:
-                img1d = np.fromstring(response.image_data_uint8, dtype=np.uint8) #get numpy array
-                img_bgr = img1d.reshape(response.height, response.width, 3) #reshape array to 3 channel image array H X W X 3
-                image = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB) # Change from Airsim's BGR to an RGB image
+            with open(filename, 'w') as txtwriter:
+                image = img_rgb
                 u = -1 # Highest point of the obstacle
                 b = -1 # Lowest point of the obstacle
 
@@ -157,6 +147,17 @@ while 1:
                 height = (b-u)/IMAGE_HEIGHT
                 width = (r-l)/IMAGE_WIDTH
                 txtwriter.write('0 ' + str(x_center) + ' ' + str(y_center) + ' ' + str(width) + ' ' + str(height))
+        # Save the raw image
+        else:
+            #np.save(filename, img_rgb)
+            im = Image.fromarray(img_rgb)
+            if e % 5 == 0:
+                filename = tmp_dir + "\\images\\validation\\" + date + "_" + str(e) + ".jpeg"
+            else:
+                filename = tmp_dir + "\\images\\train\\" + date + "_" + str(e) + ".jpeg"
+            print(tmp_dir,filename)
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
+            im.save(filename)
 
     pp.pprint(pose)
 
