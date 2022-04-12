@@ -18,7 +18,7 @@ IMAGE_HEIGHT = 144
 IMAGE_WIDTH = 256
 CENTER = (IMAGE_HEIGHT //2, IMAGE_WIDTH//2)
 FOV = 90
-# TODO: Vertical FOV rounds down for generating random integers. Some pictures will not be created
+# TODO: Vertical FOV rounds down
 VERT_FOV = FOV * IMAGE_HEIGHT // IMAGE_WIDTH
 
 OBS_LEN = 2.2 # Obstacle diameter in meters
@@ -96,19 +96,27 @@ def getBoundBox():
 
     results = model(im).xyxy[0].cpu().numpy()
 
-    # If any object is detected, report back the box info
-    if (results.size > 0):
-        results = results[0]
     # if no box is detected, report back the center of the camera to continue moving in the same direction
+    if (results.size == 0):
+        result = [CENTER[0], CENTER[1], CENTER[0], CENTER[1]]
+    # If any object is detected, report back the box info of the largest box
     else:
-        results = [CENTER[0], CENTER[1], CENTER[0], CENTER[1]]
+        max_size = 0
+        i = 0
+        for j, result in enumerate(results):
+            l = result[0]
+            u = result[1]
+            r = result[2]
+            b = result[3]
+            if np.max([b-u, r-l]) > max_size:
+                i = j
+        result = results[i]
 
-
-    l = results[0]
-    u = results[1]
-    r = results[2]
-    b = results[3]
-
+    # Return the dimensions and midpoint of the box
+    l = result[0]
+    u = result[1]
+    r = result[2]
+    b = result[3]
     i = u + (b-u)//2
     j = l + (r-l)//2
     return ([i,j] , [u,b,l,r])
@@ -180,7 +188,7 @@ while True:
     '''
 
     # velocity is proportional to the estimated distance from the object
-    velocity = VEL*max(depth, 0.25)
+    velocity = VEL*max(depth, 1)
 
     print("Velocity: ", velocity)
 
