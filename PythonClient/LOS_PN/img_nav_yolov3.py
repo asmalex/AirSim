@@ -144,7 +144,7 @@ else:
 
 print("Setting up the drone for flight...")
 
-received = client.simGetObjectPose("Obstacle1")
+received = client.simGetObjectPose("Obstacle3")
 last_obs_pos = np.array([received.position.x_val, received.position.y_val, received.position.z_val]) # Global coordinates of the obstacle
 
 client.armDisarm(True)
